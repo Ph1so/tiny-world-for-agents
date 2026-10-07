@@ -56,17 +56,25 @@ export class RunView {
   resize(): void { this.scene.resize(); }
 
   /** Draw the world and refresh panels for the player's time. */
+  private frameMs = 0;
+  private renderMs = 0;
+
   frame(showDebug: boolean): void {
     const pt = Math.min(this.player.pt, this.run.maxT);
     const t = Math.floor(pt);
+    const t0 = showDebug ? performance.now() : 0;
     this.scene.render(pt);
+    const t1 = showDebug ? performance.now() : 0;
     this.status.update(this.run, t, this.names, this.live ? this.statusText : "");
     this.agent.update(this.run, t, this.names);
     this.memory.update(this.run, t);
     this.timeline.update(this.run, t);
     this.events.update(this.run, t, this.names);
     if (showDebug) {
-      this.debug.textContent = `draw calls ${this.scene.drawCalls} · tris ${this.scene.renderer.info.render.triangles}`;
+      const t2 = performance.now();
+      this.renderMs = this.renderMs * 0.9 + (t1 - t0) * 0.1;
+      this.frameMs = this.frameMs * 0.9 + (t2 - t0) * 0.1;
+      this.debug.textContent = `draw calls ${this.scene.drawCalls} · tris ${this.scene.renderer.info.render.triangles} · scene ${this.renderMs.toFixed(1)} ms · panels ${(this.frameMs - this.renderMs).toFixed(1)} ms`;
       this.debug.style.display = "block";
     }
   }

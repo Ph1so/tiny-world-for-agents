@@ -97,6 +97,7 @@ export class RunData {
       this.base = await decodeBlocks(line.blocks_b64, line.size);
       this.blocks = this.base.slice();
       this.blocksT = 0;
+      this.state0 = null;
       this.ready = true;
       this.onReady?.();
       return;
@@ -131,12 +132,18 @@ export class RunData {
     return this.blocks[this.index(x, y, z)];
   }
 
-  /** World state (agent, creatures, light, day) at world step t. t = 0 is the snapshot. */
+  private state0: WorldState | null = null;
+
+  /** World state (agent, creatures, light, day) at world step t. t = 0 is the snapshot.
+   *  Returns stored objects, nothing is allocated per call. */
   stateAt(t: number): WorldState | null {
     if (!this.snapshot) return null;
     if (t <= 0) {
-      const s = this.snapshot;
-      return { t: 0, i: 0, agent: s.agent, creatures: s.creatures, light: s.light, day: s.day };
+      if (!this.state0) {
+        const s = this.snapshot;
+        this.state0 = { t: 0, i: 0, agent: s.agent, creatures: s.creatures, light: s.light, day: s.day };
+      }
+      return this.state0;
     }
     let line = this.worldByT[t];
     if (!line) {
@@ -144,7 +151,7 @@ export class RunData {
       for (let k = t - 1; k >= 1; k--) { line = this.worldByT[k]; if (line) break; }
       if (!line) return this.stateAt(0);
     }
-    return { t: line.t, i: line.i, agent: line.agent, creatures: line.creatures, light: line.light, day: line.day };
+    return line;
   }
 
   /** The agent step that world step t belongs to (0 before the first). */

@@ -74,7 +74,9 @@ function mount(views: RunView[], player: Player, names: NameOpts, live: boolean)
   const loop = (now: number) => {
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
-    player.maxT = Math.max(0, Math.min(...views.map((v) => v.run.maxT)));
+    let maxT = Infinity;
+    for (const v of views) maxT = Math.min(maxT, v.run.maxT);
+    player.maxT = Math.max(0, maxT);
     if (!started && views.every((v) => v.run.ready) && views.some((v) => v.run.maxT > 0)) {
       started = true;
       if (live) { player.seek(player.maxT); player.play(); }

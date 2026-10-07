@@ -38,10 +38,15 @@ export class StatusPanel {
     }
   }
 
+  private lastClock = "";
+
   update(run: RunData, t: number, opts: NameOpts, status: string): void {
     const s = run.stateAt(t);
     if (!s) return;
     const m = run.meta;
+    const clockKey = `${t}:${run.maxT}:${status}:${opts.alien}:${run.version}`;
+    if (clockKey === this.lastClock) return;
+    this.lastClock = clockKey;
     this.title.textContent = `${m.runId}  ·  ${m.controller}${m.model ? " · " + m.model : ""}${m.memoryChars ? ` · memory ${m.memoryChars}` : ""}${m.names === "alien" ? " · alien" : ""}`;
     const inDay = t % m.dayLength;
     this.clock.textContent = `day ${s.day}  ·  step ${t} / ${run.maxT}  ·  ${inDay}/${m.dayLength} ${s.light}  ·  agent step ${s.i}${status ? "  ·  " + status : ""}`;
