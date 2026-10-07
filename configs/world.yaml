@@ -1,0 +1,98 @@
+# World settings. Every balance number lives here. Tuned in milestone 2.
+size: [64, 32, 64]          # x (east), y (up), z (south)
+sea_level: 12
+names: familiar             # familiar | alien
+shuffle_recipes: false
+on_death: respawn_keep_memory   # respawn_keep_memory | respawn_wipe_memory | end_run
+
+day_length: 300
+night_start: 200            # steps 0..199 are day, 200..299 are night
+dim_steps: 20               # last steps of day and of night are "dim"
+torch_light: 6              # a torch this close turns dark into dim
+
+reach: 3                    # mine and place distance
+attack_reach: 2
+station_reach: 2            # workbench or furnace "nearby"
+close_radius: 3             # observation "close" list
+view_radius: 12             # observation "in view" list
+
+vitals:
+  max_health: 20
+  max_food: 20
+  food_drop_every: 15
+  starve_every: 5
+  heal_food_min: 15
+  heal_every: 10
+  max_air: 10
+  drown_damage: 2
+  fall_safe: 3
+
+food: {berries: 2, raw meat: 3, cooked meat: 8}
+berries_per_bush: 2
+bush_regrow: 150
+
+# Steps to break a block = ceil(hardness / tool_speed[pickaxe tier]).
+hardness:
+  grass: 2
+  dirt: 2
+  sand: 2
+  leaves: 1
+  berry bush: 1
+  torch: 1
+  log: 4
+  planks: 3
+  workbench: 4
+  door: 4
+  furnace: 6
+  stone: 8
+  coal ore: 10
+  iron ore: 12
+tool_speed: [1, 2, 3, 4]    # hand, wood, stone, iron pickaxe
+
+durability:                 # uses before the tool is gone
+  wood pickaxe: 30
+  stone pickaxe: 60
+  iron pickaxe: 150
+  stone sword: 40
+  iron sword: 100
+hand_damage: 2
+sword_damage: {stone sword: 4, iron sword: 6}
+
+terrain:
+  base_height: 15.2
+  noise_scales: [16, 8, 4]
+  noise_amps: [5.0, 2.5, 1.2]
+  edge_width: 9
+  edge_depth: 7
+  hill_height: 9.0
+  hill_radius: 7.0
+  stone_line: 19            # ground at or above this height is bare stone
+  lake_radius: 4.5
+  lake_depth: 3
+  coal_rate: 0.03           # share of stone cells that are coal ore
+  iron_rate: 0.02
+  surface_coal: 8           # extra ore cells put on the bare stone surface
+  surface_iron: 8
+  forest_tree_rate: 0.10
+  plain_tree_rate: 0.006
+  min_trees: 10
+  bush_rate: 0.012
+  min_bushes: 12
+
+creatures:
+  sheep_start: 6
+  chicken_start: 6
+  passive_max: 8            # per kind
+  passive_respawn: 2        # per kind, each morning
+  passive_move_prob: 0.25
+  health: {sheep: 6, chicken: 4, zombie: 10}
+  meat: {sheep: 2, chicken: 1, zombie: 0}
+  zombie_max: 6
+  zombie_spawn_prob: 0.08   # chance per night step while below zombie_max
+  zombie_spawn_min_dist: 12
+  zombie_spawn_max_dist: 24
+  zombie_chase_dist: 10
+  zombie_move_every: 2
+  zombie_damage: 3
+  zombie_cooldown: 2
+  torch_no_spawn: 6
