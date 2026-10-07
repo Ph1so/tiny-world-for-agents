@@ -16,6 +16,7 @@ dependencies = [
     "openai",
     "httpx",
     "python-dotenv",
+    "websockets>=17.2",
 ]
 
 [build-system]
