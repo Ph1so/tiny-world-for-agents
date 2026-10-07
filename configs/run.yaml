@@ -1,0 +1,15 @@
+# Defaults for one run: python -m tinyworld.runner.run --run-config configs/run.yaml
+# Every key here is also a CLI flag. A flag given on the command line wins.
+controller: llm            # llm | sensible_bot | random_bot
+model: mock                # an entry name from configs/models.yaml (only used by controller llm)
+models_file: configs/models.yaml
+seed: 1
+max_steps: 200             # world steps
+memory_chars: 2000         # 0 turns the memory file off
+history_window: 3          # K past action/result pairs shown each step
+max_tokens: null           # null: the model entry's max_tokens
+names: familiar            # familiar | alien
+shuffle_recipes: false
+on_death: respawn_keep_memory
+runs_dir: runs
+run_id: null               # null: <controller>_<model>_seed<seed>

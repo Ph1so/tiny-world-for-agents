@@ -1,0 +1,123 @@
+# Named model entries. A run picks one by name: --model sonnet
+#
+# provider: anthropic | openai_compatible | mock
+# model:    the provider's model id
+# input_per_m / output_per_m: USD per million tokens
+# cache_read_per_m / cache_write_per_m: optional, used when the provider reports cached tokens
+# max_tokens: reply budget per call. A thinking budget must fit inside it.
+# thinking (anthropic) / reasoning (openai_compatible): optional, passed through as given
+# sampling: temperature, top_p ... leave empty for provider defaults
+# base_url, api_key_env: openai_compatible only
+#
+# Prices and ids were filled on 2026-10-07. The official docs pages (docs.claude.com,
+# platform.openai.com/docs/pricing) could not be fetched from the build sandbox, so every
+# price below comes from third party price pages and the model id literals shipped in the
+# installed anthropic 1.12 and openai 3.26 SDKs. Check each one against the provider's
+# pricing page before a paid sweep. Every unverified value carries a "note".
+
+models:
+  mock:
+    provider: mock
+    model: mock-sensible
+    mock: {kind: sensible}            # the sensible bot in the reply format, with memory edits
+    note: no network, zero cost, used by tests
+
+  mock_wait:
+    provider: mock
+    model: mock-wait
+    mock: {kind: scripted}            # always waits one step
+    note: no network, zero cost
+
+  sonnet:
+    provider: anthropic
+    model: claude-sonnet-4-6
+    input_per_m: 3.00
+    output_per_m: 15.00
+    cache_read_per_m: 0.30            # 0.1x input, the usual Anthropic cache read rate
+    cache_write_per_m: 3.75           # 1.25x input, the usual 5 minute cache write rate
+    max_tokens: 1024
+    note: id from the SDK literal list, price from a third party page (May 2026). Not verified on docs.claude.com.
+
+  haiku:
+    provider: anthropic
+    model: claude-haiku-4-5-20251001
+    input_per_m: 1.00
+    output_per_m: 5.00
+    cache_read_per_m: 0.10
+    cache_write_per_m: 1.25
+    max_tokens: 1024
+    note: id from the SDK literal list, price from a third party page (May 2026). Not verified on docs.claude.com.
+
+  opus:
+    provider: anthropic
+    model: claude-opus-4-7
+    input_per_m: 5.00
+    output_per_m: 25.00
+    cache_read_per_m: 0.50
+    cache_write_per_m: 6.25
+    max_tokens: 1024
+    note: id from the SDK literal list, price from a third party page (May 2026). Not verified on docs.claude.com.
+
+  sonnet_thinking:
+    provider: anthropic
+    model: claude-sonnet-4-6
+    input_per_m: 3.00
+    output_per_m: 15.00
+    cache_read_per_m: 0.30
+    cache_write_per_m: 3.75
+    max_tokens: 4096
+    thinking: {type: enabled, budget_tokens: 2048}
+    note: same id and price as sonnet, with extended thinking. Thinking tokens are billed as output.
+
+  gpt54:
+    provider: openai_compatible
+    model: gpt-5.4
+    api_key_env: OPENAI_API_KEY
+    input_per_m: 2.50
+    output_per_m: 15.00
+    cache_read_per_m: 0.25
+    max_tokens: 2048
+    reasoning: {reasoning_effort: low}
+    note: id from the openai SDK literal list, price from a third party page (Aug 2026). Not verified on platform.openai.com.
+
+  gpt54_mini:
+    provider: openai_compatible
+    model: gpt-5.4-mini
+    api_key_env: OPENAI_API_KEY
+    input_per_m: 0.75
+    output_per_m: 4.50
+    cache_read_per_m: 0.075
+    max_tokens: 2048
+    reasoning: {reasoning_effort: low}
+    note: id from the openai SDK literal list, price from a third party page (Aug 2026). Not verified on platform.openai.com.
+
+  gpt5_mini:
+    provider: openai_compatible
+    model: gpt-5-mini
+    api_key_env: OPENAI_API_KEY
+    input_per_m: 0.25
+    output_per_m: 2.00
+    cache_read_per_m: 0.025
+    max_tokens: 2048
+    reasoning: {reasoning_effort: low}
+    note: id from the openai SDK literal list, price from a third party page (Aug 2026). Not verified on platform.openai.com.
+
+  openrouter_example:
+    provider: openai_compatible
+    base_url: https://openrouter.ai/api/v1
+    api_key_env: OPENROUTER_API_KEY
+    model: anthropic/claude-sonnet-4.6
+    input_per_m: 3.00
+    output_per_m: 15.00
+    max_tokens: 1024
+    note: guessed OpenRouter id and price, check openrouter.ai/models before use
+
+  ollama_example:
+    provider: openai_compatible
+    base_url: http://localhost:11434/v1
+    api_key_env: OLLAMA_API_KEY         # any value works for a local server, may stay unset
+    model: llama3.1:8b
+    input_per_m: 0.0
+    output_per_m: 0.0
+    max_tokens: 1024
+    note: local model, free. Use whatever `ollama list` shows as the id.

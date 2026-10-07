@@ -1,6 +1,7 @@
 """Run one controller in one world and log everything to runs/<run_id>/.
 
     python -m tinyworld.runner.run --controller sensible_bot --seed 1 --max-steps 1500 --run-id NAME
+    python -m tinyworld.runner.run --controller llm --model mock --memory-chars 2000 --history-window 3 --max-steps 200
 
 A controller is any object with
 
@@ -197,6 +198,12 @@ def make_bot(name: str, seed: int):
     raise ValueError(f"unknown controller: {name}")
 
 
+def make_llm(config: dict, world_cfg: WorldConfig):
+    """The LLM controller for a run config (keys model, memory_chars, history_window, ...)."""
+    from tinyworld.agent.controller import from_config
+    return from_config({**config, "on_death": world_cfg.on_death})
+
+
 def run(run_id: str, controller_name: str = "sensible_bot", seed: int = 1, max_steps: int = 1500,
         world_cfg: WorldConfig | None = None, runs_dir: str | Path = "runs", resume: bool = False,
         controller=None, extra_config: dict | None = None,
@@ -221,9 +228,15 @@ def run(run_id: str, controller_name: str = "sensible_bot", seed: int = 1, max_s
                   "shuffle_recipes": world_cfg.shuffle_recipes, "on_death": world_cfg.on_death,
                   "max_steps": max_steps, "git_commit": git_commit()}
         config.update(extra_config or {})
+        if controller is None and controller_name == "llm":
+            controller = make_llm(config, world_cfg)
+        if hasattr(controller, "config_extras"):
+            config.update(controller.config_extras())
         config["world"] = world_cfg.model_dump(mode="json")
         logger.write_config(config)
     world = World(world_cfg, seed=seed)
+    if controller is None and controller_name == "llm":
+        controller = make_llm(config, world_cfg)
     if controller is None:
         controller = make_bot(controller_name, seed)
     try:
@@ -233,25 +246,51 @@ def run(run_id: str, controller_name: str = "sensible_bot", seed: int = 1, max_s
     return world
 
 
-def main() -> None:
-    ap = argparse.ArgumentParser(description="Run one bot in one world and log it.")
-    ap.add_argument("--controller", default="sensible_bot", choices=["random_bot", "sensible_bot"])
-    ap.add_argument("--seed", type=int, default=1)
-    ap.add_argument("--max-steps", type=int, default=1500, help="world steps")
+def main(argv: list[str] | None = None) -> None:
+    ap = argparse.ArgumentParser(description="Run one controller (bot or LLM agent) in one world and log it.")
+    ap.add_argument("--run-config", default=None, help="yaml with defaults for every flag below (configs/run.yaml)")
+    ap.add_argument("--controller", default=None, choices=["random_bot", "sensible_bot", "llm"])
+    ap.add_argument("--model", default=None, help="entry name in configs/models.yaml (controller llm)")
+    ap.add_argument("--models-file", default=None, help="default configs/models.yaml")
+    ap.add_argument("--memory-chars", type=int, default=None, help="memory file limit, 0 turns it off")
+    ap.add_argument("--history-window", type=int, default=None, help="past action/result pairs shown, K")
+    ap.add_argument("--max-tokens", type=int, default=None, help="reply budget per call, default from the model entry")
+    ap.add_argument("--seed", type=int, default=None)
+    ap.add_argument("--max-steps", type=int, default=None, help="world steps")
     ap.add_argument("--run-id", default=None)
-    ap.add_argument("--runs-dir", default="runs")
+    ap.add_argument("--runs-dir", default=None)
     ap.add_argument("--config", default=None, help="world yaml, default configs/world.yaml")
     ap.add_argument("--names", choices=["familiar", "alien"], default=None)
     ap.add_argument("--shuffle-recipes", action="store_true", default=None)
     ap.add_argument("--on-death", default=None)
     ap.add_argument("--resume", action="store_true")
-    args = ap.parse_args()
-    cfg = load_world_config(args.config, names=args.names, shuffle_recipes=args.shuffle_recipes,
-                            on_death=args.on_death)
-    run_id = args.run_id or f"{args.controller}_seed{args.seed}"
-    world = run(run_id, args.controller, args.seed, args.max_steps, cfg, args.runs_dir, args.resume)
+    args = ap.parse_args(argv)
+
+    # Precedence: CLI flag, then the run config file, then these defaults.
+    opts = {"controller": "sensible_bot", "model": None, "models_file": None, "memory_chars": 2000,
+            "history_window": 3, "max_tokens": None, "seed": 1, "max_steps": 1500, "run_id": None,
+            "runs_dir": "runs", "names": None, "shuffle_recipes": None, "on_death": None}
+    if args.run_config:
+        file_opts = yaml.safe_load(Path(args.run_config).read_text()) or {}
+        opts.update({k: v for k, v in file_opts.items() if k in opts})
+    opts.update({k: v for k, v in vars(args).items() if k in opts and v is not None})
+
+    cfg = load_world_config(args.config, names=opts["names"], shuffle_recipes=opts["shuffle_recipes"],
+                            on_death=opts["on_death"])
+    extra = None
+    if opts["controller"] == "llm":
+        if not opts["model"]:
+            ap.error("--controller llm needs --model NAME (an entry in configs/models.yaml)")
+        extra = {"model": opts["model"], "models_file": opts["models_file"], "memory_chars": opts["memory_chars"],
+                 "history_window": opts["history_window"], "max_tokens": opts["max_tokens"]}
+        default_id = f"llm_{opts['model']}_seed{opts['seed']}"
+    else:
+        default_id = f"{opts['controller']}_seed{opts['seed']}"
+    run_id = opts["run_id"] or default_id
+    world = run(run_id, opts["controller"], opts["seed"], opts["max_steps"], cfg, opts["runs_dir"], args.resume,
+                extra_config=extra)
     print(f"{run_id}: world steps {world.t}, deaths {world.deaths}, "
-          f"crafted {world.firsts['craft']}, folder {Path(args.runs_dir) / run_id}")
+          f"crafted {world.firsts['craft']}, folder {Path(opts['runs_dir']) / run_id}")
 
 
 if __name__ == "__main__":
