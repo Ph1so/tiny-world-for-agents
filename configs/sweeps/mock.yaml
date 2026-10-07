@@ -1,0 +1,14 @@
+# The M6 acceptance sweep with no network: 2 mock models x 2 memory sizes x 2 seeds x 200 steps.
+#   uv run python -m tinyworld.runner.sweep configs/sweeps/mock.yaml --yes
+name: mock
+controller: llm
+seeds: [1, 2]
+max_steps: 200
+models: [mock, mock_wait]
+memory_chars: [0, 500]
+history_window: [3]
+names: familiar
+shuffle_recipes: false
+on_death: respawn_keep_memory
+budget_usd: 1
+parallel_runs: 4

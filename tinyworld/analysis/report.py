@@ -21,7 +21,7 @@ import argparse
 import html
 import json
 import sys
-from collections import defaultdict
+import warnings
 from pathlib import Path
 from urllib.parse import quote
 
@@ -228,9 +228,11 @@ def activity_figure(df: pd.DataFrame, max_t: int) -> go.Figure:
     xs = [(b + 0.5) * TIME_BIN for b in range(int(np.ceil(max_t / TIME_BIN)))]
     for ci, cond in enumerate(conds):
         arrs = [activity_over_time(Path(d), max_t) for d in df.loc[df["condition"] == cond, "_dir"]]
-        mean = np.nanmean(np.stack(arrs), axis=0) if arrs else None
-        if mean is None:
+        if not arrs:
             continue
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)       # a bin with no steps is all nan
+            mean = np.nanmean(np.stack(arrs), axis=0)
         r, c = ci // ncol + 1, ci % ncol + 1
         for a, action in enumerate(ACTIONS):
             ys = np.nan_to_num(mean[:, a])
@@ -256,8 +258,10 @@ def memory_figure(df: pd.DataFrame, max_t: int, mem_colors: dict[int, str]) -> g
         for mem in sorted(sub["memory_chars"].unique()):
             runs = sub[sub["memory_chars"] == mem]
             arrs = [memory_over_time(Path(d), max_t) for d in runs["_dir"]]
-            mean = np.nanmean(np.stack(arrs), axis=0)
-            lo, hi = np.nanmin(np.stack(arrs), axis=0), np.nanmax(np.stack(arrs), axis=0)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", RuntimeWarning)
+                mean = np.nanmean(np.stack(arrs), axis=0)
+                lo, hi = np.nanmin(np.stack(arrs), axis=0), np.nanmax(np.stack(arrs), axis=0)
             col = mem_colors[int(mem)]
             name = f"m{mem:,}"
             if len(arrs) > 1:
