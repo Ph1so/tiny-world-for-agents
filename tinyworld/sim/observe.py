@@ -20,20 +20,43 @@ def _near(mask: np.ndarray) -> np.ndarray:
 
 
 def line_of_sight(world, cells: np.ndarray) -> np.ndarray:
-    """For (N, 3) cells as x, y, z: can the agent's eye see each one."""
+    """For (N, 3) cells as x, y, z: can the agent's eye see each one.
+
+    A straight line runs from the eye to the nearest point of the cell and is sampled along
+    its length. It is blocked by any cell that sight does not pass through. It is also
+    blocked where it slips between two such cells that touch only at an edge.
+    """
     if len(cells) == 0:
         return np.zeros(0, dtype=bool)
     x, y, z = world.pos
     eye = np.array([x + 0.5, y + 1.5, z + 0.5])
-    tgt = np.clip(eye, cells + 0.05, cells + 0.95)            # nearest point of each cell
+    head = np.array([x, y + 1, z])
+    tgt = np.clip(eye, cells, cells + 1)                      # nearest point of each cell
     s = (np.arange(1, _SAMPLES) / _SAMPLES)[:, None, None]
     ijk = np.floor(eye + (tgt - eye) * s).astype(int)         # (samples, N, 3)
     size = np.array([world.sx, world.sy, world.sz])
-    inside = ((ijk >= 0) & (ijk < size)).all(-1)
-    c = np.clip(ijk, 0, size - 1)
-    opaque = ~_TRANSP[world.blocks[c[..., 1], c[..., 2], c[..., 0]]]
-    own = (ijk == cells).all(-1) | (ijk == np.array([x, y + 1, z])).all(-1)
-    return ~(opaque & inside & ~own).any(0)
+    flat = ~_TRANSP[world.blocks].ravel()                      # index = x + z*sx + y*sx*sz
+    mult = np.array([1, world.sx * world.sz, world.sx])
+
+    def opaque(c: np.ndarray, own: np.ndarray) -> np.ndarray:
+        inside = ((c >= 0) & (c < size)).all(-1)
+        lin = np.clip(c, 0, size - 1) @ mult
+        return flat[lin] & inside & (lin != own) & (lin != head @ mult)
+
+    ok = ~opaque(ijk, cells @ mult).any(0)
+    # Second pass, only for the cells still in the running: lines that slip through an edge.
+    cells, ijk = cells[ok], ijk[:, ok]
+    own = cells @ mult
+    seq = np.concatenate([np.broadcast_to(head, (1,) + cells.shape), ijk, cells[None]])
+    a, b = seq[:-1], seq[1:]
+    changed = a != b
+    walls = np.ones(changed.shape[:2], dtype=bool)            # every side cell on the way is opaque
+    for axis in range(3):
+        side = a.copy()
+        side[..., axis] = b[..., axis]
+        walls &= ~changed[..., axis] | opaque(side, own)
+    ok[ok] = ~(walls & (changed.sum(-1) >= 2)).any(0)
+    return ok
 
 
 def visible_blocks(world) -> tuple[np.ndarray, np.ndarray]:

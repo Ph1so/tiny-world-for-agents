@@ -1,0 +1,96 @@
+{"t": 3, "i": 1, "type": "first_mine", "detail": {"block": "log"}}
+{"t": 16, "i": 4, "type": "first_mine", "detail": {"block": "leaves"}}
+{"t": 18, "i": 5, "type": "first_mine", "detail": {"block": "grass"}}
+{"t": 24, "i": 8, "type": "first_craft", "detail": {"item": "planks"}}
+{"t": 31, "i": 11, "type": "first_craft", "detail": {"item": "workbench"}}
+{"t": 34, "i": 13, "type": "first_place", "detail": {"block": "workbench"}}
+{"t": 40, "i": 18, "type": "first_place", "detail": {"block": "leaves"}}
+{"t": 46, "i": 22, "type": "first_craft", "detail": {"item": "sticks"}}
+{"t": 54, "i": 25, "type": "first_mine", "detail": {"block": "dirt"}}
+{"t": 89, "i": 39, "type": "first_place", "detail": {"block": "dirt"}}
+{"t": 112, "i": 45, "type": "first_place", "detail": {"block": "grass"}}
+{"t": 123, "i": 49, "type": "first_mine", "detail": {"block": "workbench"}}
+{"t": 185, "i": 74, "type": "first_mine", "detail": {"block": "sand"}}
+{"t": 189, "i": 78, "type": "first_place", "detail": {"block": "sand"}}
+{"t": 200, "i": 82, "type": "night_start", "detail": {"day": 1}}
+{"t": 300, "i": 126, "type": "day_start", "detail": {"day": 2}}
+{"t": 304, "i": 129, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 309, "i": 133, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 310, "i": 135, "type": "first_mine", "detail": {"block": "berry bush"}}
+{"t": 314, "i": 137, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 319, "i": 139, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 324, "i": 141, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 329, "i": 143, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 331, "i": 145, "type": "first_eat", "detail": {"item": "berries"}}
+{"t": 394, "i": 166, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 399, "i": 169, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 404, "i": 172, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 409, "i": 174, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 414, "i": 177, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 419, "i": 179, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 424, "i": 180, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 429, "i": 183, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 434, "i": 184, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 439, "i": 187, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 444, "i": 190, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 449, "i": 192, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 454, "i": 194, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 459, "i": 196, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 459, "i": 196, "type": "death", "detail": {"cause": "hunger", "pos": [33, 12, 26]}}
+{"t": 459, "i": 196, "type": "respawn", "detail": {"pos": [32, 19, 32]}}
+{"t": 491, "i": 209, "type": "first_place", "detail": {"block": "log"}}
+{"t": 500, "i": 211, "type": "night_start", "detail": {"day": 2}}
+{"t": 573, "i": 245, "type": "first_place", "detail": {"block": "planks"}}
+{"t": 600, "i": 257, "type": "day_start", "detail": {"day": 3}}
+{"t": 763, "i": 325, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 768, "i": 326, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 773, "i": 328, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 774, "i": 330, "type": "first_craft", "detail": {"item": "wood pickaxe"}}
+{"t": 778, "i": 331, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 783, "i": 333, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 788, "i": 335, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 793, "i": 337, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 798, "i": 339, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 800, "i": 341, "type": "night_start", "detail": {"day": 3}}
+{"t": 803, "i": 342, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 808, "i": 346, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 813, "i": 348, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 818, "i": 350, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 823, "i": 353, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 828, "i": 357, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 833, "i": 359, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 838, "i": 363, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 843, "i": 365, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 848, "i": 368, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 853, "i": 370, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 858, "i": 374, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 858, "i": 374, "type": "death", "detail": {"cause": "hunger", "pos": [15, 16, 33]}}
+{"t": 858, "i": 374, "type": "respawn", "detail": {"pos": [32, 19, 32]}}
+{"t": 870, "i": 380, "type": "hurt", "detail": {"cause": "zombie", "amount": 3}}
+{"t": 872, "i": 382, "type": "hurt", "detail": {"cause": "zombie", "amount": 3}}
+{"t": 874, "i": 384, "type": "hurt", "detail": {"cause": "zombie", "amount": 3}}
+{"t": 876, "i": 386, "type": "hurt", "detail": {"cause": "zombie", "amount": 3}}
+{"t": 890, "i": 394, "type": "hurt", "detail": {"cause": "zombie", "amount": 3}}
+{"t": 892, "i": 396, "type": "hurt", "detail": {"cause": "zombie", "amount": 3}}
+{"t": 894, "i": 398, "type": "hurt", "detail": {"cause": "zombie", "amount": 3}}
+{"t": 896, "i": 399, "type": "hurt", "detail": {"cause": "zombie", "amount": 3}}
+{"t": 896, "i": 399, "type": "death", "detail": {"cause": "zombie", "pos": [34, 18, 31]}}
+{"t": 896, "i": 399, "type": "respawn", "detail": {"pos": [32, 19, 32]}}
+{"t": 900, "i": 402, "type": "day_start", "detail": {"day": 4}}
+{"t": 1100, "i": 478, "type": "night_start", "detail": {"day": 4}}
+{"t": 1180, "i": 507, "type": "hurt", "detail": {"cause": "zombie", "amount": 3}}
+{"t": 1182, "i": 508, "type": "hurt", "detail": {"cause": "zombie", "amount": 3}}
+{"t": 1184, "i": 510, "type": "hurt", "detail": {"cause": "zombie", "amount": 3}}
+{"t": 1186, "i": 511, "type": "hurt", "detail": {"cause": "zombie", "amount": 3}}
+{"t": 1188, "i": 513, "type": "hurt", "detail": {"cause": "zombie", "amount": 3}}
+{"t": 1192, "i": 516, "type": "hurt", "detail": {"cause": "zombie", "amount": 3}}
+{"t": 1194, "i": 518, "type": "hurt", "detail": {"cause": "zombie", "amount": 3}}
+{"t": 1194, "i": 518, "type": "death", "detail": {"cause": "zombie", "pos": [30, 12, 26]}}
+{"t": 1194, "i": 518, "type": "respawn", "detail": {"pos": [32, 19, 32]}}
+{"t": 1200, "i": 520, "type": "day_start", "detail": {"day": 5}}
+{"t": 1204, "i": 522, "type": "kill", "detail": {"kind": "chicken", "id": 21}}
+{"t": 1208, "i": 525, "type": "first_eat", "detail": {"item": "raw meat"}}
+{"t": 1400, "i": 597, "type": "night_start", "detail": {"day": 5}}
+{"t": 1425, "i": 610, "type": "kill", "detail": {"kind": "chicken", "id": 11}}
+{"t": 1474, "i": 626, "type": "kill", "detail": {"kind": "chicken", "id": 12}}
+{"t": 1500, "i": 646, "type": "day_start", "detail": {"day": 6}}

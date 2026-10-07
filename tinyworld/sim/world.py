@@ -416,7 +416,7 @@ class World:
         else:
             level = 0
         x, y, z = self.pos
-        if y + 2 < self.sy and any(SUPPORT[int(b)] for b in self.blocks[y + 2:, z, x]):
+        if y + 2 < self.sy and any(SUPPORT[int(b)] and b != ID["leaves"] for b in self.blocks[y + 2:, z, x]):
             level = max(0, level - 1)
         if level == 0:
             r = c.torch_light
