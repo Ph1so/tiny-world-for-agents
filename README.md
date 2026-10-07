@@ -28,3 +28,14 @@ uv run python -m tinyworld.server --runs runs/<sweep>                      # ser
 ```
 
 The sweep runner prints the run count and a cost estimate and waits for a yes (skip with `--yes`, look only with `--dry-run`). It stops cleanly at `budget_usd` and can be started again: runs with a `summary.json` are skipped and cut-off runs continue from their last complete step. `sweep_status.json` in the sweep folder shows what ran and what was spent. The report is written at the end of every sweep and links each run to the viewer.
+
+## Viewer
+
+The viewer replays run folders and follows live runs. Build it once, then one server serves the API and the page.
+
+```
+cd viewer && npm install && npm run build && cd ..
+uv run python -m tinyworld.server --runs runs --runs samples --runs viewer/fixtures --port 8000
+```
+
+Open `http://127.0.0.1:8000/` for the run picker, `/?run=<run_id>` to replay, `/?run=<run_id>&live=1` to follow a run that is still being written, and `/compare?a=<run>&b=<run>` for two runs side by side. For development run the server as above and `cd viewer && npm run dev`, which serves the page on port 5173 and proxies `/api` and `/ws` to port 8000. Details, keys and fixtures are in `viewer/README.md`. Screenshots are in `docs/screenshots/`.

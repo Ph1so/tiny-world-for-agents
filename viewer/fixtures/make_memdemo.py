@@ -1,6 +1,9 @@
-"""Make a small run with memory edits for testing the memory panel and timeline.
+"""Make small runs with memory edits for testing the memory panel and timeline.
 
-    uv run python viewer/fixtures/make_memdemo.py            # writes viewer/fixtures/memdemo/
+    uv run python viewer/fixtures/make_memdemo.py            # writes viewer/fixtures/memdemo/ and aliendemo/
+
+memdemo is in familiar mode, aliendemo in alien mode with shuffled recipes (for the name toggle).
+Both place torches once the bot has some, so torch glow can be checked too.
 
 The sensible bot picks the actions. A scripted wrapper adds memory ops (append, replace, rewrite,
 and a few edits that go over the limit and are rejected) and a short thought, using the same log
@@ -8,6 +11,7 @@ formats the LLM agent writes (docs/INTERFACES.md). No new formats, no model call
 """
 from __future__ import annotations
 
+import argparse
 import re
 import sys
 from pathlib import Path
@@ -77,6 +81,11 @@ class MemoryDemoController:
     def act(self, observation: str, world) -> dict:
         self.i += 1
         action = self.bot.act(observation, world)
+        if self.i % 6 == 0 and world.inv.get("torch", 0) > 0:
+            torch = world.dn("torch")
+            places = [a for a in world.valid_actions() if a["name"] == "place" and a["item"] == torch and a["y"] == world.pos[1]]
+            if places:
+                action = places[0]
         ops = self._ops(observation, world)
         out: dict = {"action": action, "thought": f"I will {action['name']}. Memory has {len(self.text)} chars.",
                      "raw_reply": "", "parse_ok": True}
@@ -95,13 +104,22 @@ class MemoryDemoController:
             self.bot.on_result(result, world)
 
 
-def main() -> None:
+def make(name: str, seed: int, steps: int, alien: bool) -> None:
     out_dir = Path(__file__).resolve().parent
-    cfg = load_world_config()
-    ctl = MemoryDemoController(seed=2)
-    world = run("memdemo", "sensible_bot", seed=2, max_steps=420, world_cfg=cfg, runs_dir=out_dir,
-                controller=ctl, extra_config={"memory_chars": LIMIT, "history_window": 3, "model": "scripted-demo"})
-    print(f"memdemo: world steps {world.t}, agent steps {ctl.i}, folder {out_dir / 'memdemo'}")
+    cfg = load_world_config(names="alien" if alien else "familiar", shuffle_recipes=alien)
+    ctl = MemoryDemoController(seed=seed)
+    extra = {"memory_chars": LIMIT, "history_window": 3, "model": "scripted-demo"}
+    world = run(name, "sensible_bot", seed=seed, max_steps=steps, world_cfg=cfg, runs_dir=out_dir,
+                controller=ctl, extra_config=extra)
+    print(f"{name}: world steps {world.t}, agent steps {ctl.i}, folder {out_dir / name}")
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--steps", type=int, default=700)
+    args = ap.parse_args()
+    make("memdemo", seed=2, steps=args.steps, alien=False)
+    make("aliendemo", seed=2, steps=min(args.steps, 500), alien=True)
 
 
 if __name__ == "__main__":

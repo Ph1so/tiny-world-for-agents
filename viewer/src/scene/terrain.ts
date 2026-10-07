@@ -212,7 +212,7 @@ export class Terrain {
     const wg = water.build();
     if (wg) {
       const m = new THREE.Mesh(wg, this.waterMat);
-      m.receiveShadow = true; m.matrixAutoUpdate = false; m.renderOrder = 2;
+      m.receiveShadow = false; m.matrixAutoUpdate = false; m.renderOrder = 2;
       slot.water = m; this.group.add(m);
     }
   }

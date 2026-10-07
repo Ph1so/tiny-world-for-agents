@@ -16,20 +16,23 @@
 {"t": 101, "i": 53, "type": "first_mine", "detail": {"block": "coal ore"}}
 {"t": 102, "i": 54, "type": "first_craft", "detail": {"item": "torch"}}
 {"t": 106, "i": 55, "type": "first_mine", "detail": {"block": "iron ore"}}
-{"t": 119, "i": 61, "type": "memory_rejected", "detail": {"over_by": 26}}
-{"t": 133, "i": 71, "type": "first_place", "detail": {"block": "furnace"}}
-{"t": 134, "i": 72, "type": "first_craft", "detail": {"item": "iron ingot"}}
+{"t": 117, "i": 60, "type": "first_place", "detail": {"block": "torch"}}
+{"t": 118, "i": 61, "type": "memory_rejected", "detail": {"over_by": 26}}
+{"t": 132, "i": 70, "type": "kill", "detail": {"kind": "sheep", "id": 5}}
+{"t": 135, "i": 73, "type": "first_place", "detail": {"block": "furnace"}}
+{"t": 136, "i": 74, "type": "first_craft", "detail": {"item": "iron ingot"}}
 {"t": 139, "i": 77, "type": "first_craft", "detail": {"item": "iron pickaxe"}}
-{"t": 160, "i": 88, "type": "memory_rejected", "detail": {"over_by": 26}}
-{"t": 165, "i": 93, "type": "first_place", "detail": {"block": "planks"}}
-{"t": 167, "i": 95, "type": "first_mine", "detail": {"block": "grass"}}
-{"t": 168, "i": 96, "type": "first_place", "detail": {"block": "grass"}}
-{"t": 171, "i": 99, "type": "first_mine", "detail": {"block": "leaves"}}
-{"t": 172, "i": 100, "type": "first_place", "detail": {"block": "leaves"}}
+{"t": 159, "i": 88, "type": "memory_rejected", "detail": {"over_by": 26}}
+{"t": 165, "i": 92, "type": "first_place", "detail": {"block": "planks"}}
+{"t": 166, "i": 93, "type": "first_mine", "detail": {"block": "leaves"}}
+{"t": 167, "i": 94, "type": "first_place", "detail": {"block": "leaves"}}
 {"t": 200, "i": 110, "type": "night_start", "detail": {"day": 1}}
-{"t": 300, "i": 124, "type": "day_start", "detail": {"day": 2}}
-{"t": 300, "i": 125, "type": "first_mine", "detail": {"block": "planks"}}
-{"t": 327, "i": 147, "type": "first_craft", "detail": {"item": "iron sword"}}
-{"t": 331, "i": 151, "type": "first_craft", "detail": {"item": "door"}}
-{"t": 335, "i": 155, "type": "first_craft", "detail": {"item": "cooked meat"}}
-{"t": 341, "i": 161, "type": "kill", "detail": {"kind": "sheep", "id": 5}}
+{"t": 300, "i": 122, "type": "day_start", "detail": {"day": 2}}
+{"t": 300, "i": 123, "type": "first_mine", "detail": {"block": "planks"}}
+{"t": 313, "i": 136, "type": "first_craft", "detail": {"item": "iron sword"}}
+{"t": 316, "i": 139, "type": "first_craft", "detail": {"item": "door"}}
+{"t": 320, "i": 143, "type": "first_craft", "detail": {"item": "cooked meat"}}
+{"t": 321, "i": 144, "type": "first_eat", "detail": {"item": "cooked meat"}}
+{"t": 351, "i": 164, "type": "kill", "detail": {"kind": "sheep", "id": 6}}
+{"t": 500, "i": 214, "type": "night_start", "detail": {"day": 2}}
+{"t": 600, "i": 228, "type": "day_start", "detail": {"day": 3}}

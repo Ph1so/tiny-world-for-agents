@@ -3,7 +3,8 @@
 //   /?run=ID&live=1       follow a run that is still being written
 //   /compare?a=ID&b=ID    two runs side by side with one scrubber
 //   /                     run picker
-// Extra query keys: t=STEP (start there, paused), cam=orbit|follow|map, debug=1 (draw call counter).
+// Extra query keys: t=STEP (start there, paused), cam=orbit|follow|map, names=both (alien names on),
+// debug=1 (draw call counter).
 import "./style.css";
 import { listRuns, type RunListEntry } from "./data/source";
 import { Player } from "./player";
@@ -56,6 +57,7 @@ function mount(views: RunView[], player: Player, names: NameOpts, live: boolean)
     toggleRecord: () => first.recorder.toggle(),
     toggleAlien: () => { names.alien = !names.alien; return names.alien; },
     showAlienToggle: true,
+    alienOn: names.alien,
     goLive: live ? () => { player.live = true; player.seek(player.maxT); player.play(); } : undefined,
   });
   const header = el("div", { class: "topbar" },
@@ -92,7 +94,7 @@ function mount(views: RunView[], player: Player, names: NameOpts, live: boolean)
 }
 
 (async () => {
-  const names: NameOpts = { alien: false };
+  const names: NameOpts = { alien: params.get("names") === "both" };
   const player = new Player();
   if (isCompare) {
     const a = params.get("a"), b = params.get("b");

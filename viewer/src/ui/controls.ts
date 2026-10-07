@@ -12,6 +12,7 @@ export interface ControlHooks {
   toggleRecord: () => boolean;      // returns true while recording
   toggleAlien: () => boolean;       // returns the new state
   showAlienToggle: boolean;
+  alienOn?: boolean;
   goLive?: () => void;
 }
 
@@ -50,7 +51,7 @@ export class Controls {
     }, "small rec");
     const right = el("div", { class: "group" }, this.camBtns.orbit, this.camBtns.follow, this.camBtns.top, this.recBtn);
     if (hooks.showAlienToggle) {
-      const b = button("alien names", () => b.classList.toggle("active", hooks.toggleAlien()), "small");
+      const b = button("alien names", () => b.classList.toggle("active", hooks.toggleAlien()), `small ${hooks.alienOn ? "active" : ""}`);
       right.append(b);
     }
     if (hooks.goLive) {

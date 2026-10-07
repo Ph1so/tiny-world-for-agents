@@ -83,7 +83,7 @@ class RunStore:
             cfg = {}
         last = _read_last_line(p / "world.jsonl")
         return {
-            "run_id": cfg.get("run_id", p.name),
+            "run_id": p.name,
             "controller": cfg.get("controller"),
             "model": cfg.get("model"),
             "memory_chars": cfg.get("memory_chars", 0),

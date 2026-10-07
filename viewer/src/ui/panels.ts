@@ -95,9 +95,10 @@ export class AgentPanel {
 
   update(run: RunData, t: number, opts: NameOpts): void {
     const i = run.agentStepIndexAt(t);
-    if (i === this.lastI && opts.alien === this.lastAlien) return;
-    this.lastI = i; this.lastAlien = opts.alien;
     const rec = run.stepRecord(i);
+    const key = rec ? i : -2 - i;      // a step that has not arrived yet must be redrawn when it does
+    if (key === this.lastI && opts.alien === this.lastAlien) return;
+    this.lastI = key; this.lastAlien = opts.alien;
     const rename = namer(run, opts);
     this.head.textContent = `agent step ${i}${rec ? `  (world ${rec.t_start} → ${rec.t_end})` : ""}`;
     if (!rec) {

@@ -1,13 +1,13 @@
-run_id: memdemo
+run_id: aliendemo
 seed: 2
 controller: sensible_bot
 model: scripted-demo
 memory_chars: 800
 history_window: 3
-names: familiar
-shuffle_recipes: false
+names: alien
+shuffle_recipes: true
 on_death: respawn_keep_memory
-max_steps: 700
+max_steps: 500
 git_commit: f26bafdc20dd3cebdc8dbc5a7dee4ad71b7dff82
 world:
   size:
@@ -15,8 +15,8 @@ world:
   - 32
   - 64
   sea_level: 12
-  names: familiar
-  shuffle_recipes: false
+  names: alien
+  shuffle_recipes: true
   on_death: respawn_keep_memory
   day_length: 300
   night_start: 200
