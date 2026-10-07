@@ -1,0 +1,124 @@
+run_id: memdemo
+seed: 2
+controller: sensible_bot
+model: scripted-demo
+memory_chars: 800
+history_window: 3
+names: familiar
+shuffle_recipes: false
+on_death: respawn_keep_memory
+max_steps: 420
+git_commit: 7397984810bab199eb8ba6bbbc5772514db51a14
+world:
+  size:
+  - 64
+  - 32
+  - 64
+  sea_level: 12
+  names: familiar
+  shuffle_recipes: false
+  on_death: respawn_keep_memory
+  day_length: 300
+  night_start: 200
+  dim_steps: 20
+  torch_light: 6
+  reach: 3
+  attack_reach: 2
+  station_reach: 2
+  close_radius: 3
+  view_radius: 12
+  vitals:
+    max_health: 20
+    max_food: 20
+    food_drop_every: 15
+    starve_every: 5
+    heal_food_min: 15
+    heal_every: 10
+    max_air: 10
+    drown_damage: 2
+    fall_safe: 3
+  food:
+    berries: 2
+    raw meat: 3
+    cooked meat: 8
+  berries_per_bush: 2
+  bush_regrow: 150
+  hardness:
+    grass: 2
+    dirt: 2
+    sand: 2
+    leaves: 1
+    berry bush: 1
+    torch: 1
+    log: 4
+    planks: 3
+    workbench: 4
+    door: 4
+    furnace: 6
+    stone: 8
+    coal ore: 10
+    iron ore: 12
+  tool_speed:
+  - 1.0
+  - 2.0
+  - 3.0
+  - 4.0
+  durability:
+    wood pickaxe: 30
+    stone pickaxe: 60
+    iron pickaxe: 150
+    stone sword: 40
+    iron sword: 100
+  hand_damage: 2
+  sword_damage:
+    stone sword: 4
+    iron sword: 6
+  terrain:
+    base_height: 15.2
+    noise_scales:
+    - 16
+    - 8
+    - 4
+    noise_amps:
+    - 5.0
+    - 2.5
+    - 1.2
+    edge_width: 9
+    edge_depth: 7
+    hill_height: 9.0
+    hill_radius: 7.0
+    stone_line: 19
+    lake_radius: 4.5
+    lake_depth: 3
+    coal_rate: 0.03
+    iron_rate: 0.02
+    surface_coal: 8
+    surface_iron: 8
+    forest_tree_rate: 0.1
+    plain_tree_rate: 0.006
+    min_trees: 10
+    bush_rate: 0.012
+    min_bushes: 12
+  creatures:
+    sheep_start: 6
+    chicken_start: 6
+    passive_max: 8
+    passive_respawn: 2
+    passive_move_prob: 0.25
+    health:
+      sheep: 6
+      chicken: 4
+      zombie: 10
+    meat:
+      sheep: 2
+      chicken: 1
+      zombie: 0
+    zombie_max: 6
+    zombie_spawn_prob: 0.08
+    zombie_spawn_min_dist: 12
+    zombie_spawn_max_dist: 24
+    zombie_chase_dist: 10
+    zombie_move_every: 2
+    zombie_damage: 3
+    zombie_cooldown: 2
+    torch_no_spawn: 6
