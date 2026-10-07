@@ -1,0 +1,13 @@
+# Smoke test: both bots, 2 seeds, 200 steps. No model calls, no cost.
+#   uv run python -m tinyworld.runner.sweep configs/sweeps/smoke.yaml --yes
+name: smoke
+controller: [random_bot, sensible_bot]
+seeds: [1, 2]
+max_steps: 200
+memory_chars: [0]
+history_window: [0]
+names: familiar
+shuffle_recipes: false
+on_death: respawn_keep_memory
+budget_usd: 0
+parallel_runs: 2
