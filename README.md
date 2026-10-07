@@ -34,6 +34,7 @@ Sweeps run every combination of a yaml config in `configs/sweeps/` and put the r
 
 ```
 uv run python -m tinyworld.runner.sweep configs/sweeps/smoke.yaml --yes    # both bots, 2 seeds, 200 steps, no cost
+uv run python -m tinyworld.runner.sweep configs/sweeps/mock.yaml --yes     # 2 mock models x 2 memory sizes x 2 seeds, no network
 uv run python -m tinyworld.runner.sweep configs/sweeps/memory_sweep.yaml   # the llm sweep from PLAN.md, asks first
 uv run python -m tinyworld.analysis.metrics runs/<sweep>/<run>             # summary.json for one run
 uv run python -m tinyworld.analysis.report runs/<sweep>                    # report.html for a sweep
