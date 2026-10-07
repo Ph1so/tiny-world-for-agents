@@ -19,7 +19,10 @@ Sweep yaml (PLAN.md section 11 plus two keys):
     parallel_runs: 4
 
 Run folders are runs/<sweep name>/<model>_m<memory>_k<K>_s<seed>/ (for bots the controller name
-takes the place of the model). Each run is one child process of tinyworld.runner.run with --resume,
+takes the place of the model). The run_id in config.yaml is the folder name without the sweep, so
+the server can serve a sweep with `python -m tinyworld.server --runs runs/<sweep name>` and the
+report can link each run as http://localhost:8000/?run=<run_id>.
+Each run is one child process of tinyworld.runner.run with --resume,
 so a run that was cut off continues from its last complete step. A run with a summary.json is done
 and is skipped. Spend is read from the cost_usd field of every steps.jsonl line while the runs are
 going. When it reaches budget_usd no new run starts and the running ones are stopped (SIGTERM),
@@ -54,8 +57,8 @@ EST_OUTPUT_TOKENS = 150              # thought + memory ops + action
 
 @dataclass
 class RunSpec:
-    name: str                        # folder name inside the sweep folder
-    run_id: str                      # "<sweep>/<name>", what the runner gets as --run-id
+    name: str                        # folder name inside the sweep folder, also the run_id
+    run_id: str                      # same as name; the sweep folder is passed as --runs-dir
     controller: str
     model: str | None
     memory_chars: int
@@ -66,10 +69,11 @@ class RunSpec:
     on_death: str
     shuffle_recipes: bool
 
-    def argv(self, runs_dir: Path) -> list[str]:
+    def argv(self, sweep_dir: Path) -> list[str]:
+        """Command line of the child process. sweep_dir is runs/<sweep name>."""
         cmd = [sys.executable, "-m", "tinyworld.runner.run", "--controller", self.controller,
                "--seed", str(self.seed), "--max-steps", str(self.max_steps), "--run-id", self.run_id,
-               "--runs-dir", str(runs_dir), "--names", self.names, "--on-death", self.on_death, "--resume"]
+               "--runs-dir", str(sweep_dir), "--names", self.names, "--on-death", self.on_death, "--resume"]
         if self.shuffle_recipes:
             cmd.append("--shuffle-recipes")
         if self.controller not in BOT_CONTROLLERS:
@@ -148,7 +152,7 @@ def expand(cfg: SweepConfig) -> list[RunSpec]:
         for (ctrl, model, mem, k), seed in itertools.product(conditions, cfg.seeds):
             label = slug(model) if model is not None else ctrl
             name = f"{label}_m{mem}_k{k}_s{seed}"
-            specs.append(RunSpec(name=name, run_id=f"{cfg.name}/{name}", controller=ctrl, model=model,
+            specs.append(RunSpec(name=name, run_id=name, controller=ctrl, model=model,
                                  memory_chars=mem, history_window=k, seed=seed, max_steps=cfg.max_steps,
                                  names=cfg.names, on_death=cfg.on_death, shuffle_recipes=cfg.shuffle_recipes))
     return specs
@@ -361,11 +365,11 @@ class Sweep:
                     d = self.run_dir(spec)
                     d.mkdir(parents=True, exist_ok=True)
                     log = open((log_dir or d) / "sweep_run.log", "a")
-                    proc = subprocess.Popen(spec.argv(self.runs_dir), stdout=log, stderr=subprocess.STDOUT,
+                    proc = subprocess.Popen(spec.argv(self.dir), stdout=log, stderr=subprocess.STDOUT,
                                             cwd=cwd, env=env)
                     running[spec.name] = (proc, spec, time.time())
                     self._set(spec, status="running", pid=proc.pid, started_at=_now())
-                    print(f"start {spec.run_id} (pid {proc.pid})")
+                    print(f"start {self.cfg.name}/{spec.name} (pid {proc.pid})")
                 time.sleep(0.25)
                 self.meter.update([self.run_dir(s) for s in self.specs])
                 for name in list(running):

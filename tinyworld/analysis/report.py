@@ -423,8 +423,8 @@ def build_report(sweep_dir: str | Path, viewer: str = VIEWER_URL) -> str:
                       "that condition kept itself alive. Later deaths after a respawn are not shown here, see the deaths chart.",
                       first, wide=True))
 
-    parts.append(f"<h2>Runs</h2><p>One row per run. The replay link opens the run in the viewer at {html.escape(viewer)} "
-                 "(start it with <code>python -m tinyworld.server --runs runs</code>).</p>")
+    parts.append(f"<h2>Runs</h2><p>One row per run. The replay link opens the run in the viewer at {html.escape(viewer)}. "
+                 f"Start the server on this sweep folder first: <code>python -m tinyworld.server --runs {html.escape(str(sweep_dir))}</code>.</p>")
     parts.append(runs_table(df, viewer))
     parts.append("</main>")
     body = "".join(parts)

@@ -19,11 +19,12 @@ def test_expand_names_and_order():
     assert cfg.controllers == ["llm"] and cfg.budget_usd == 0 and cfg.parallel_runs == 1
     specs = S.expand(cfg)
     assert len(specs) == 2 * 2 * 2
-    assert specs[0].name == "a_m0_k3_s1" and specs[0].run_id == "x/a_m0_k3_s1"
+    assert specs[0].name == "a_m0_k3_s1" and specs[0].run_id == "a_m0_k3_s1"
     assert specs[1].name == "a_m0_k3_s2" and specs[2].name == "a_m500_k3_s1"
     assert specs[-1].name == "org-b-1_m500_k3_s2"
     assert len({s.name for s in specs}) == len(specs)
-    argv = specs[0].argv(Path("runs"))
+    argv = specs[0].argv(Path("runs/x"))
+    assert argv[argv.index("--runs-dir") + 1] == "runs/x" and argv[argv.index("--run-id") + 1] == "a_m0_k3_s1"
     assert "--controller" in argv and argv[argv.index("--controller") + 1] == "llm"
     assert argv[argv.index("--model") + 1] == "a" and argv[argv.index("--memory-chars") + 1] == "0"
     assert argv[argv.index("--history-window") + 1] == "3" and "--resume" in argv
@@ -90,7 +91,7 @@ def test_smoke_sweep_end_to_end(smoke):
     names = ["random_bot_m0_k0_s1", "random_bot_m0_k0_s2", "sensible_bot_m0_k0_s1", "sensible_bot_m0_k0_s2"]
     for n in names:
         s = json.loads((smoke / n / "summary.json").read_text())
-        assert s["world_steps"] >= 200 and s["finished"] and s["run_id"] == f"smoke/{n}"
+        assert s["world_steps"] >= 200 and s["finished"] and s["run_id"] == n
         assert s["wall_clock_s"] > 0
     status = json.loads((smoke / "sweep_status.json").read_text())
     assert status["stopped"] is None and status["spent_usd"] == 0
@@ -98,7 +99,7 @@ def test_smoke_sweep_end_to_end(smoke):
     assert yaml.safe_load((smoke / "sweep.yaml").read_text())["seeds"] == [1, 2]
     html = (smoke / "report.html").read_text()
     assert html.count('class="plotly-graph-div"') > 10
-    assert "localhost:8000/?run=smoke%2Frandom_bot_m0_k0_s1" in html
+    assert "localhost:8000/?run=random_bot_m0_k0_s1" in html
     assert "Activity share over time" in html and "Survival" in html
 
 
