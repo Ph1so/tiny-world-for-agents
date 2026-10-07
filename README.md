@@ -15,6 +15,19 @@ uv run python -m tinyworld.runner.run --controller sensible_bot --seed 1 --max-s
 
 Add `--names alien --shuffle-recipes` to either command for alien mode. Runs go to `runs/<run_id>/`. Two sample runs are in `samples/`. Choices made along the way are in `docs/DECISIONS.md`.
 
+## LLM agent
+
+The agent is a controller for the same run loop. It gets the fixed system prompt from `PLAN.md` section 7, and each step its memory file, the last K action/result pairs, and the observation. Model entries (provider, id, prices, thinking settings) live in `configs/models.yaml`. Keys go in `.env` (copy `.env.example`).
+
+```
+uv run python -m tinyworld.runner.run --controller llm --model mock --memory-chars 2000 --history-window 3 --max-steps 200 --run-id mock_demo
+uv run python -m tinyworld.runner.run --controller llm --model sonnet --memory-chars 2000 --history-window 3 --max-steps 200 --run-id sonnet_demo
+uv run python -m tinyworld.runner.run --run-config configs/run.yaml                        # same keys from a file, flags win
+uv run python -m tinyworld.runner.run --run-config configs/run.yaml --resume                # continue from the last complete step
+```
+
+The first command needs no network: `mock` is the sensible bot wrapped in the reply format, with memory edits, a few over limit edits and a few unreadable replies thrown in. The second is the M4 acceptance check with a real model; it needs `ANTHROPIC_API_KEY` in `.env` and costs a few cents. Swap `sonnet` for any entry in `configs/models.yaml` (`haiku`, `opus`, `gpt54_mini`, `ollama_example`, ...). `--memory-chars 0` turns the memory file off. Prices in `models.yaml` were not checked against the official pricing pages, see `docs/DECISIONS.md` 74.
+
 ## Experiments
 
 Sweeps run every combination of a yaml config in `configs/sweeps/` and put the runs in `runs/<sweep>/`.
