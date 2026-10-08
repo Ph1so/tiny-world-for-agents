@@ -77,6 +77,7 @@ class WorldConfig(_M):
     names: Literal["familiar", "alien"] = "familiar"
     shuffle_recipes: bool = False
     on_death: Literal["respawn_keep_memory", "respawn_wipe_memory", "end_run"] = "respawn_keep_memory"
+    on_stuck: Literal["end_run", "continue"] = "end_run"   # trapped for good: end, or only log a stuck event
     day_length: int = 300
     night_start: int = 200
     dim_steps: int = 20

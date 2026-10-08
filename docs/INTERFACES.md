@@ -128,9 +128,9 @@ When `accepted` is false, `text` is the unchanged file and `over_by` is how many
 {"t":413,"i":120,"type":"first_mine","detail":{"block":"stone"}}
 ```
 
-Types: `first_mine`, `first_craft`, `craft_fail`, `first_place`, `first_eat`, `death` (detail.cause is one of hunger, drowning, fall, zombie), `respawn`, `kill` (detail.kind), `hurt` (detail.cause), `night_start`, `day_start`, `tool_broke`, `memory_rejected`, `parse_fail`. Names in `detail` are familiar names.
+Types: `first_mine`, `first_craft`, `craft_fail`, `first_place`, `first_eat`, `death` (detail.cause is one of hunger, drowning, fall, zombie), `respawn`, `kill` (detail.kind), `hurt` (detail.cause), `night_start`, `day_start`, `tool_broke`, `memory_rejected`, `parse_fail`, `stuck`. Names in `detail` are familiar names.
 
-`detail` by type. `first_mine` `{block}`. `first_place` `{block}`. `first_craft` `{item}`. `first_eat` `{item}`. `craft_fail` `{items: {name: count}}`. `death` `{cause, pos}`. `respawn` `{pos}`. `kill` `{kind, id}`. `hurt` `{cause, amount}`. `night_start` and `day_start` `{day}`. `tool_broke` `{tool}`. `memory_rejected` and `parse_fail` come from the agent loop.
+`detail` by type. `first_mine` `{block}`. `first_place` `{block}`. `first_craft` `{item}`. `first_eat` `{item}`. `craft_fail` `{items: {name: count}}`. `death` `{cause, pos}`. `respawn` `{pos}`. `stuck` `{pos}`. `kill` `{kind, id}`. `hurt` `{cause, amount}`. `night_start` and `day_start` `{day}`. `tool_broke` `{tool}`. `memory_rejected` and `parse_fail` come from the agent loop.
 
 ### summary.json
 Written at the end of a run by `tinyworld.analysis.metrics`. Flat keys for the metrics in section 11 of PLAN.md, plus `run_id`, `seed`, `controller`, `model`, `memory_chars`, `history_window`, `names`, `world_steps`, `agent_steps`, `finished`.

@@ -2,6 +2,7 @@
 from conftest import flat_world, make_world
 
 from tinyworld.sim import text as T
+from tinyworld.sim.defs import ID
 
 
 def give(w, **items):
@@ -48,8 +49,8 @@ def test_move_bad_arguments(flat):
 
 
 def test_up_and_down_only_in_water(flat):
-    assert flat.step({"name": "move", "dir": "up", "steps": 1}).text == T.NOT_MOVED
-    assert flat.step({"name": "move", "dir": "down", "steps": 1}).text == T.NOT_MOVED
+    assert flat.step({"name": "move", "dir": "up", "steps": 1}).text == T.NOT_MOVED_DRY
+    assert flat.step({"name": "move", "dir": "down", "steps": 1}).text == T.NOT_MOVED_DRY
     for y in range(5, 10):
         flat.set_block(32, y, 31, "water")
     flat.step({"name": "move", "dir": "north", "steps": 1})
@@ -418,3 +419,95 @@ def test_valid_actions_are_all_accepted():
         assert w2.step(a).valid, a
         names.add(a["name"])
     assert {"move", "mine", "place", "craft", "eat", "wait"} <= names
+
+
+# ------------------------------------------------------- shafts and traps
+
+def dig_shaft(w, x, z, top, bottom):
+    """A one-wide hole in column (x, z) from y = top down to y = bottom, stone around it."""
+    w.blocks[:top + 1] = ID["stone"]
+    for y in range(bottom, top + 1):
+        w.set_block(x, y, z, "air")
+
+
+def test_move_up_out_of_water_says_why(flat):
+    r = flat.step({"name": "move", "dir": "up", "steps": 1})
+    assert flat.pos == [32, 10, 32] and r.text == T.NOT_MOVED_DRY and r.valid
+    r = flat.step({"name": "move", "dir": "down", "steps": 2})
+    assert r.text == T.NOT_MOVED_DRY
+    flat.set_block(32, 11, 31, "stone")
+    assert flat.step({"name": "move", "dir": "north", "steps": 1}).text == T.NOT_MOVED
+
+
+def test_move_up_blocked_in_water_is_plain_not_moved(flat):
+    for y in range(5, 11):
+        flat.set_block(32, y, 32, "water")
+    flat.set_block(32, 12, 32, "stone")
+    assert flat.step({"name": "move", "dir": "up", "steps": 1}).text == T.NOT_MOVED
+
+
+def test_respawn_does_not_drop_into_a_dug_out_start():
+    w = flat_world()
+    dig_shaft(w, 32, 32, 9, 2)                     # start column dug down to y = 2, surface at y = 10
+    w.pos = [32, 2, 32]
+    w._add("stone pickaxe", 1)                     # not trapped, so the run goes on
+    w.food, w.health = 0, 1
+    r = w.step({"name": "wait", "steps": 8})
+    assert r.died == "hunger"
+    assert w.pos[1] == 10 and max(abs(w.pos[0] - 32), abs(w.pos[2] - 32)) == 1
+    assert w.block(w.pos[0], w.pos[1] - 1, w.pos[2]) == "stone"
+
+
+def test_respawn_on_a_built_over_start_is_unchanged(flat):
+    flat.set_block(32, 10, 32, "planks")
+    flat.set_block(32, 11, 32, "planks")
+    flat.pos = [40, 10, 40]
+    flat.food, flat.health = 0, 1
+    flat.step({"name": "wait", "steps": 8})
+    assert flat.pos == [32, 12, 32]
+
+
+def test_trapped_in_stone_with_nothing_ends_the_run():
+    w = flat_world()
+    dig_shaft(w, 32, 32, 12, 4)
+    w.blocks[13:] = ID["stone"]                    # sealed: nothing can be swum or walked out of
+    w.pos = [32, 4, 32]
+    r = w.step({"name": "move", "dir": "up", "steps": 1})
+    assert w.trapped() and w.done and w.stuck
+    assert [e["type"] for e in r.events if e["type"] == "stuck"] == ["stuck"]
+    assert w.step({"name": "wait", "steps": 1}).steps == 0
+
+
+def test_open_shaft_without_tools_is_also_trapped():
+    w = flat_world()
+    dig_shaft(w, 32, 32, 9, 2)                     # stone all round, open sky above, empty hands
+    w.pos = [32, 2, 32]
+    assert w.trapped()
+
+
+def test_not_trapped_with_a_pickaxe_a_block_or_soft_walls():
+    w = flat_world()
+    dig_shaft(w, 32, 32, 9, 2)
+    w.pos = [32, 2, 32]
+    w._add("stone pickaxe", 1)
+    assert not w.trapped()
+    w = flat_world()
+    dig_shaft(w, 32, 32, 9, 2)
+    w.pos = [32, 2, 32]
+    w._add("dirt", 1)
+    assert not w.trapped()
+    w = flat_world()                                # grass walls break by hand
+    w.pos = [32, 10, 32]
+    w.set_block(32, 9, 32, "air")
+    w.pos = [32, 9, 32]
+    assert not w.trapped()
+
+
+def test_on_stuck_continue_only_logs_once():
+    w = flat_world(on_stuck="continue")
+    dig_shaft(w, 32, 32, 9, 2)
+    w.pos = [32, 2, 32]
+    kinds = []
+    for _ in range(3):
+        kinds += [e["type"] for e in w.step({"name": "wait", "steps": 1}).events]
+    assert kinds.count("stuck") == 1 and not w.done

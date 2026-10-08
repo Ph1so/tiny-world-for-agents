@@ -1,10 +1,13 @@
 """Every sentence the simulation can show the agent. Kept in one place so tests can scan it.
 
-Wording rule: say what happened. Never say why, and never say what to do.
+Wording rule: say what happened. Never say why, and never say what to do. One exception:
+NOT_MOVED_DRY states the rule for moving up and down, because without it a model can repeat a
+failing "move up" for hundreds of steps without any way to tell why (see DECISIONS.md).
 """
 
 MOVED = "Moved {n} {cells} {dir}."
 NOT_MOVED = "You did not move."
+NOT_MOVED_DRY = "You did not move. Up and down only work in water."
 GOT = "Got {n} {item}."
 NOT_BROKEN = "The block did not break."
 NOTHING_THERE = "Nothing is there."

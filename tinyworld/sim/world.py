@@ -66,6 +66,7 @@ class World:
         self.t = 0
         self.done = False
         self.deaths = 0
+        self.stuck = False
         self.pos: list[int] = list(self.spawn)
         self.inv: dict[str, int] = {}
         self.tools: dict[str, int] = {}                  # tool name -> uses left on the one in use
@@ -527,14 +528,76 @@ class World:
             self.done = True
             self._death_notice = T.DIED_END.format(cause=cause)
             return
-        x, y, z = self.spawn
-        while y + 1 < self.sy - 1 and not (AGENT_PASS[self.bid(x, y, z)] and AGENT_PASS[self.bid(x, y + 1, z)]):
-            y += 1
-        self.pos = list(self.settle((x, y, z))[0])
+        self.pos = list(self._respawn_cell())
         self.inv, self.tools = {}, {}
         self._reset_vitals()
         self._death_notice = T.DIED_RESPAWN.format(cause=cause)
         self._event("respawn", {"pos": list(self.pos)})
+
+    def _respawn_cell(self) -> Pos:
+        """The start point, on top of anything built over it. If the start column has been dug
+        out, the nearest cell that stands on a block no more than one cell below the start height,
+        so a death never puts the agent back at the bottom of its own shaft."""
+        sx, sy, sz = self.spawn
+        y = sy
+        while y + 1 < self.sy - 1 and not (AGENT_PASS[self.bid(sx, y, sz)] and AGENT_PASS[self.bid(sx, y + 1, sz)]):
+            y += 1
+        cell = self.settle((sx, y, sz))[0]
+        if cell[1] >= sy - 1:
+            return cell
+        for r in range(1, max(self.sx, self.sz)):
+            for x in range(sx - r, sx + r + 1):
+                for z in range(sz - r, sz + r + 1):
+                    if max(abs(x - sx), abs(z - sz)) != r or not (0 <= x < self.sx and 0 <= z < self.sz):
+                        continue
+                    for y in range(max(1, sy - 1), self.sy - 1):     # lowest dry standing spot from there up
+                        if (self.bid(x, y, z) != WATER and AGENT_PASS[self.bid(x, y, z)]
+                                and AGENT_PASS[self.bid(x, y + 1, z)] and SUPPORT[self.bid(x, y - 1, z)]):
+                            return (x, y, z)
+        return cell
+
+    # ---------------------------------------------------------------- stuck
+
+    def trapped(self) -> bool:
+        """True when nothing the agent can do will change its surroundings again: it holds nothing
+        it could place or craft with, and from every cell it can walk or swim to, no block within
+        reach breaks with the tools it has. Creatures are ignored. Searches at most 256 cells."""
+        uses = {k for r in self.recipes for k, _ in r.inputs} | set(defs.FUELS)
+        if any(i in defs.PLACEABLE or i in uses for i in self.inv):
+            return False
+        r = self.cfg.reach
+        start = tuple(self.pos)
+        seen, todo = {start}, [start]
+        while todo:
+            x0, y0, z0 = todo.pop()
+            for y in range(max(0, y0 - r), min(self.sy, y0 + r + 1)):
+                for z in range(max(0, z0 - r), min(self.sz, z0 + r + 1)):
+                    for x in range(max(0, x0 - r), min(self.sx, x0 + r + 1)):
+                        b = self.bid(x, y, z)
+                        if b != AIR and self.mine_steps(BLOCKS[b]) is not None and self.exposed(x, y, z):
+                            return False
+            for d in DIRS:
+                tgt = self.step_target((x0, y0, z0), d)
+                if tgt is None:
+                    continue
+                nxt = self.settle(tgt)[0]
+                if nxt not in seen:
+                    seen.add(nxt)
+                    todo.append(nxt)
+            if len(seen) > 256:
+                return False
+        return True
+
+    def _check_stuck(self) -> None:
+        """Log a stuck event when the agent becomes trapped, and end the run if on_stuck says so."""
+        if self.done:
+            return
+        now = self.trapped()
+        if now and not self.stuck:
+            self._event("stuck", {"pos": list(self.pos)})
+            if self.cfg.on_stuck == "end_run":
+                self.done = True
+        self.stuck = now
 
     # -------------------------------------------------------------- actions
 
@@ -557,6 +620,7 @@ class World:
             text, valid, desc = handler(action)
         if self.t == t0:
             self._tick()
+        self._check_stuck()
         self.last_action, self.last_result = desc, text
         return StepResult(text, self.t - t0, valid, self._died, self._deltas, self._events)
 
@@ -583,6 +647,9 @@ class World:
                 break
             seen |= now
         if moved == 0:
+            x, y, z = self.pos
+            if d in ("up", "down") and self.bid(x, y, z) != WATER and not (d == "down" and self.bid(x, y - 1, z) == WATER):
+                return T.NOT_MOVED_DRY, True, desc
             return T.NOT_MOVED, True, desc
         return T.MOVED.format(n=moved, cells="cell" if moved == 1 else "cells", dir=d), True, desc
 
@@ -761,7 +828,7 @@ class World:
 
     def state_hash(self) -> str:
         state = {
-            "t": self.t, "done": self.done, "deaths": self.deaths, "agent": self._agent_dict(),
+            "t": self.t, "done": self.done, "stuck": self.stuck, "deaths": self.deaths, "agent": self._agent_dict(),
             "ticks": [self._food_tick, self._starve_tick, self._heal_tick, self._last_hit],
             "creatures": self.creatures, "next_id": self._next_id, "regrow": self.regrow,
             "firsts": self.firsts, "last": [self.last_action, self.last_result],

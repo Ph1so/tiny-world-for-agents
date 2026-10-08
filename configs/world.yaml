@@ -4,6 +4,7 @@ sea_level: 12
 names: familiar             # familiar | alien
 shuffle_recipes: false
 on_death: respawn_keep_memory   # respawn_keep_memory | respawn_wipe_memory | end_run
+on_stuck: end_run               # end_run | continue (continue only logs the stuck event)
 
 day_length: 300
 night_start: 200            # steps 0..199 are day, 200..299 are night

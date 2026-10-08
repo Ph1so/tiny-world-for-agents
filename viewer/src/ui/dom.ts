@@ -53,6 +53,7 @@ export function fmtEvent(e: { type: string; detail: Record<string, unknown> }, r
     }
     case "death": return `died of ${d.cause}`;
     case "respawn": return `respawned`;
+    case "stuck": return `trapped for good`;
     case "kill": return `killed ${rename(String(d.kind))} #${d.id}`;
     case "hurt": return `hurt by ${d.cause} (-${d.amount})`;
     case "night_start": return `night falls (day ${d.day})`;
@@ -67,5 +68,5 @@ export function fmtEvent(e: { type: string; detail: Record<string, unknown> }, r
 export const EVENT_ICON: Record<string, string> = {
   first_mine: "⛏", first_place: "🧱", first_craft: "🔨", first_eat: "🍓", craft_fail: "✖", death: "💀",
   respawn: "✨", kill: "⚔", hurt: "💢", night_start: "🌙", day_start: "☀", tool_broke: "💥",
-  memory_rejected: "🚫", parse_fail: "❓",
+  memory_rejected: "🚫", parse_fail: "❓", stuck: "⛓",
 };

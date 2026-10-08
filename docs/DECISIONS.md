@@ -207,3 +207,22 @@ as-is.
     `--config`. The resolved world is stored in `config.yaml` as before, so resume and the viewer
     are unaffected. Determinism in hard mode was confirmed identical across two fresh processes;
     alien mode and the banned-words check both still pass in hard mode.
+96. **Respawn never drops into a dug-out start.** The haiku_night sample dug a one-wide shaft
+    straight down from the start point, starved at the bottom, and respawned at the start, which
+    put it back at the bottom with empty hands in stone, unable to leave for its last 200 steps.
+    Respawn still climbs on top of anything built over the start. If that cell would be more than
+    one below the start height, the agent instead goes to the nearest column (rings outward)
+    with a dry cell it can stand in at or above start height minus one, taking the lowest such
+    cell so it lands under a tree canopy rather than on it.
+97. **"Up and down only work in water."** A failed `move up` or `move down` out of water now
+    returns "You did not move. Up and down only work in water." The same sample tried `move up`
+    about 200 times against a bare "You did not move." This is the one template that states a
+    rule rather than only what happened; it describes the mechanic, not what to do about it. A
+    blocked move in water still gets the plain text.
+98. **Stuck runs end.** After each action the world checks `trapped()`: the agent holds nothing
+    it could place or that any recipe uses, and from every cell it can walk or swim to (up to
+    256), no block within reach breaks with its tools. Creatures are ignored. When this first
+    becomes true a `stuck` event is logged and, with `on_stuck: end_run` (the default), the run
+    ends. `on_stuck: continue` only logs the event. A digging escape needs a pickaxe in stone,
+    and placing a block in one's own cell is not allowed, so with empty hands in stone nothing can
+    ever change.
