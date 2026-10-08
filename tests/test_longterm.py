@@ -49,6 +49,8 @@ def test_prompt_with_the_long_term_file():
     assert "Your long-term file holds at most 800 characters." in p
     assert "Your memory file starts empty in every run." in p
     assert '"longterm": [...]' in p
+    assert "A death does not end a run" in p and '{"op": "rewrite", "text": "..."}' in p
+    assert 'In "longterm" plain text is added as a new line.' in p
     assert not any(re.search(rf"\b{b}", p, re.I) for b in BANNED)
     alone = build_system_prompt(w, 3, 0, 800)
     assert "memory file" not in alone and '"memory"' not in alone and '"longterm": [...]' in alone
@@ -58,8 +60,38 @@ def test_prompt_with_the_long_term_file():
 
 def test_parser_reads_longterm_ops():
     p = parse_reply('{"thought": "", "memory": [], "longterm": ["eat early"], "action": {"name": "wait", "steps": 1}}')
-    assert p.ok and p.longterm_ops == [{"op": "rewrite", "text": "eat early"}]
+    assert p.ok and p.longterm_ops == [{"op": "append", "text": "eat early"}]
     assert parse_reply('{"action": {"name": "wait"}}').longterm_ops == []
+
+
+def test_plain_longterm_text_is_added_never_a_rewrite():
+    """Memory keeps its coercion (a list of lines is the whole file); long-term plain text appends."""
+    p = parse_reply('{"memory": ["a", "b"], "longterm": ["x", "y"], "action": {"name": "wait"}}')
+    assert p.memory_ops == [{"op": "rewrite", "text": "a\nb"}]
+    assert p.longterm_ops == [{"op": "append", "text": "x"}, {"op": "append", "text": "y"}]
+    assert parse_reply('{"longterm": "one line", "action": {"name": "wait"}}').longterm_ops == [{"op": "append", "text": "one line"}]
+    assert parse_reply('{"longterm": [{"op": "rewrite", "text": "new"}], "action": {"name": "wait"}}').longterm_ops == \
+        [{"op": "rewrite", "text": "new"}]
+    assert parse_reflection('{"longterm": ["lesson"]}').longterm_ops == [{"op": "append", "text": "lesson"}]
+
+
+def test_one_new_line_does_not_wipe_the_long_term_file():
+    """runs/haiku_4nights_g2 step 241: the reply carried only its new line as a list of strings."""
+    w = world()
+    start = "CRAFT: {log:1}->4 planks.\nLESSONS: eat by food 5."
+    c = controller(['{"memory": [], "longterm": ["RUN 7 started at step 660 (respawn)"], "action": {"name": "wait", "steps": 1}}'],
+                   longterm=200, start=start)
+    c.act(w.observe(), w)
+    assert c.longterm.text == start + "\nRUN 7 started at step 660 (respawn)"
+
+
+def test_resending_the_whole_file_as_lines_is_rejected_not_duplicated():
+    w = world()
+    start = "line one\nline two"
+    c = controller(['{"memory": [], "longterm": ["line one", "line two", "line three"], "action": {"name": "wait", "steps": 1}}'],
+                   longterm=30, start=start)
+    out = c.act(w.observe(), w)
+    assert out["longterm_rejected"] and c.longterm.text == start
 
 
 def test_parse_reflection():

@@ -58,6 +58,31 @@ def normalize_memory(value) -> list:
     return ops
 
 
+def normalize_longterm(value) -> list:
+    """The "longterm" field. Same op dicts as memory, but plain text is always added, never a
+    whole-file replacement: a bare string or a list of strings becomes appends.
+
+    A model that sends only the line it wants to add would otherwise wipe the file, which is
+    what happened in runs/haiku_4nights_g2 at agent step 241: one line replaced every recipe and
+    lesson the lineage had. Replacing the whole file needs an explicit {"op": "rewrite"}. A
+    model that resends the whole file as plain lines gets an over-limit rejection instead of
+    duplicates, and the notice tells it so. See docs/DECISIONS.md.
+    """
+    if isinstance(value, str):
+        return [{"op": "append", "text": value}] if value.strip() else []
+    if isinstance(value, dict):
+        return [value]
+    if not isinstance(value, list):
+        return []
+    ops = []
+    for x in value:
+        if isinstance(x, dict):
+            ops.append(x)
+        elif isinstance(x, str) and x.strip():
+            ops.append({"op": "append", "text": x})
+    return ops
+
+
 def _candidates(text: str):
     """Strings that might hold the object, most likely first."""
     t = text.strip()
@@ -196,7 +221,7 @@ def parse_reply(text: str) -> Parsed:
     if not isinstance(thought, str):
         thought = json.dumps(thought)
     ops = normalize_memory(obj.get("memory", []))
-    return Parsed(True, thought=thought, memory_ops=ops, longterm_ops=normalize_memory(obj.get("longterm", [])),
+    return Parsed(True, thought=thought, memory_ops=ops, longterm_ops=normalize_longterm(obj.get("longterm", [])),
                   action=action)
 
 
@@ -221,4 +246,4 @@ def parse_reflection(text: str) -> Parsed:
     thought = obj.get("thought", "")
     if not isinstance(thought, str):
         thought = json.dumps(thought)
-    return Parsed(True, thought=thought, longterm_ops=normalize_memory(obj.get("longterm", [])))
+    return Parsed(True, thought=thought, longterm_ops=normalize_longterm(obj.get("longterm", [])))

@@ -28,7 +28,14 @@ REPLY_NO_MEMORY = '{"thought": "...", "action": {...}}'
 LONGTERM_PARAGRAPH = ("\nYour long-term file holds at most {L} characters. It carries over to your later runs, "
                       "which may take place in a different world.{memory_note} You may edit it every step with "
                       "the \"longterm\" field{edit_like}. An edit that would go over its limit is "
-                      "rejected and the file stays as it was.\n")
+                      "rejected and the file stays as it was. A death does not end a run: you start again at "
+                      "the starting point and the run goes on.\n")
+# How edits work. Only shown with the long-term file on (the PLAN.md prompt never spelled the
+# ops out, and a model that guessed wiped its long-term file, see DECISIONS.md).
+EDIT_OPS = ('\nAn edit is a list of ops: {{"op": "append", "text": "..."}} adds a line, '
+            '{{"op": "replace", "old": "...", "new": "..."}} changes the first match, '
+            '{{"op": "rewrite", "text": "..."}} replaces the whole file. In {fields} plain text is added '
+            'as a new line.\n')
 LONGTERM_MEMORY_NOTE = " Your memory file starts empty in every run."
 REPLY_LONGTERM_MEMORY = '{"thought": "...", "memory": [...], "longterm": [...], "action": {...}}'
 REPLY_LONGTERM_ONLY = '{"thought": "...", "longterm": [...], "action": {...}}'
@@ -73,7 +80,7 @@ def build_system_prompt(world, history_window: int, memory_chars: int, longterm_
         clause = ("your memory file, " if mem else "") + "your long-term file, "
         paragraph = (MEMORY_PARAGRAPH.format(N=memory_chars) if mem else "") + LONGTERM_PARAGRAPH.format(
             L=longterm_chars, memory_note=LONGTERM_MEMORY_NOTE if mem else "",
-            edit_like=", the same way as the memory file" if mem else "")
+            edit_like=", the same way as the memory file" if mem else "") + EDIT_OPS.format(fields='"longterm"')
         return SYSTEM_TEMPLATE.format(memory_clause=clause, K=history_window, memory_paragraph=paragraph,
                                       action_lines=action_lines(world),
                                       reply_line=REPLY_LONGTERM_MEMORY if mem else REPLY_LONGTERM_ONLY)

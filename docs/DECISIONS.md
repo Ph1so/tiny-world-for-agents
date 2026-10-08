@@ -286,3 +286,17 @@ as-is.
     after a "No room", skips a goal it cannot reach instead of waiting on it, and cuts a
     staircase out when it is stuck deep or hungry with no food in reach. It still makes all 17
     things on seeds 1-20. It does not use chests.
+101. **Long-term plain text appends; edit ops spelled out.** In runs/haiku_4nights_g2 the agent
+    wiped its long-term file at agent step 241: it sent only the line it wanted to add, as a list
+    of strings, and the memory coercion (a list of strings is the whole file, right for the
+    memory file because Haiku resends it every step) turned that into a rewrite. Every recipe and
+    lesson the lineage had was gone, and the run starved soon after. Now "longterm" plain text
+    (a string or strings in the list) is always appended; replacing the whole file needs an
+    explicit rewrite op, and a model that resends the whole file as lines gets an over-limit
+    rejection rather than duplicates. With the long-term file on, the prompt now spells out the
+    three ops and says a death does not end a run (the agent had called each respawn a new run).
+    Runs without a long-term file keep the PLAN.md prompt word for word. Haiku's max_tokens went
+    from 2048 to 4096: 7% of that run's replies were cut off while rewriting both files. The run
+    was resumed from world step 808 with its long-term file restored to the version after agent
+    step 240; the restore is a line marked "manual" in its longterm.jsonl and its config.yaml has
+    a note, so the change mid-run is on record.

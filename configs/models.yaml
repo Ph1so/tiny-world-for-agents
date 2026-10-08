@@ -42,7 +42,7 @@ models:
     output_per_m: 0.50
     cache_read_per_m: 0.01
     cache_write_per_m: 0.125
-    max_tokens: 2048
+    max_tokens: 4096          # 2048 cut off replies that rewrote both memory files (haiku_4nights_g2)
     note: verified 2026-10-07 (id on the models overview and deprecations pages, price on the pricing page, prompts up to 100k tokens). The cheap default.
 
   sonnet:
