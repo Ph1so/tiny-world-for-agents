@@ -43,13 +43,14 @@ export class Controls {
       orbit: button("orbit", () => this.cam("orbit", hooks), "small cam active"),
       follow: button("follow", () => this.cam("follow", hooks), "small cam"),
       top: button("map", () => this.cam("top", hooks), "small cam"),
+      pov: button("pov", () => this.cam("pov", hooks), "small cam"),
     };
     this.recBtn = button("● record", () => {
       const on = hooks.toggleRecord();
       this.recBtn.textContent = on ? "■ stop" : "● record";
       this.recBtn.classList.toggle("recording", on);
     }, "small rec");
-    const right = el("div", { class: "group" }, this.camBtns.orbit, this.camBtns.follow, this.camBtns.top, this.recBtn);
+    const right = el("div", { class: "group" }, this.camBtns.orbit, this.camBtns.follow, this.camBtns.top, this.camBtns.pov, this.recBtn);
     if (hooks.showAlienToggle) {
       const b = button("alien names", () => b.classList.toggle("active", hooks.toggleAlien()), `small ${hooks.alienOn ? "active" : ""}`);
       right.append(b);

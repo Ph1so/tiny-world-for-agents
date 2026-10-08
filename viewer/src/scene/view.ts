@@ -7,7 +7,7 @@ import { Creatures } from "./creatures";
 import { Sky } from "./sky";
 import { Terrain } from "./terrain";
 
-export type CameraMode = "orbit" | "follow" | "top";
+export type CameraMode = "orbit" | "follow" | "top" | "pov";
 
 export class SceneView {
   canvas: HTMLCanvasElement;
@@ -26,6 +26,7 @@ export class SceneView {
   private agentPos = new THREE.Vector3();
   private agentPrev = new THREE.Vector3();
   private agentYaw = 0;
+  private povYaw = 0;
   private creatureYaw = new Map<number, number>();
   private followOffset = new THREE.Vector3(10, 12, 10);
   private tmp = new THREE.Vector3();
@@ -71,6 +72,7 @@ export class SceneView {
     this.sky = new Sky(run.size);
     this.scene.add(this.sky.group);
     this.scene.fog = this.sky.fog;
+    if (this.mode === "pov") this.setMode("pov");
     this.sky.setTorches(this.terrain.torches.values());
     this.terrain.torchesChanged = false;
     const spawn = run.snapshot?.spawn ?? [sx / 2, sy / 2, sz / 2];
@@ -89,8 +91,24 @@ export class SceneView {
 
   setMode(mode: CameraMode): void {
     this.mode = mode;
-    this.controls.enabled = mode !== "top";
+    this.controls.enabled = mode === "orbit" || mode === "follow";
     this.topControls.enabled = mode === "top";
+    // POV: eye height, wider lens, own body hidden, fog at the agent's view radius.
+    const pov = mode === "pov";
+    this.creatures.agent.visible = !pov;
+    this.persp.fov = pov ? 75 : 45;
+    this.persp.near = pov ? 0.05 : 0.5;
+    this.povYaw = this.agentYaw;
+    if (this.sky) {
+      const r = this.run.meta.viewRadius;
+      this.sky.fog.near = pov ? r * 0.5 : 90;
+      this.sky.fog.far = pov ? r + 1 : 260;
+    }
+    if (!pov && this.initialised) {
+      // Leave POV with the orbit camera looking at the agent again.
+      this.controls.target.copy(this.agentPos).addScalar(0.5);
+      this.persp.position.copy(this.controls.target).add(this.followOffset);
+    }
     if (mode === "follow" && this.initialised) this.followOffset.copy(this.persp.position).sub(this.controls.target);
     this.resize();
   }
@@ -138,7 +156,15 @@ export class SceneView {
       this.controls.target.lerp(this.tmp, Math.min(1, dt * 6));
       this.persp.position.copy(this.controls.target).add(this.followOffset);
     }
-    if (this.mode === "top") this.topControls.update(); else this.controls.update();
+    if (this.mode === "pov") {
+      // Turn smoothly toward the way the agent last moved. The model faces -z at yaw 0.
+      let d = this.agentYaw - this.povYaw;
+      d = Math.atan2(Math.sin(d), Math.cos(d));
+      this.povYaw += d * Math.min(1, dt * 8);
+      this.persp.position.set(this.agentPos.x + 0.5, this.agentPos.y + 1.2, this.agentPos.z + 0.5);
+      this.tmp.set(-Math.sin(this.povYaw), -0.08, -Math.cos(this.povYaw)).add(this.persp.position);
+      this.persp.lookAt(this.tmp);
+    } else if (this.mode === "top") this.topControls.update(); else this.controls.update();
     if (this.mode === "follow") this.followOffset.copy(this.persp.position).sub(this.controls.target);
     this.renderer.render(this.scene, this.camera);
     this.lastDrawCalls = this.renderer.info.render.calls;

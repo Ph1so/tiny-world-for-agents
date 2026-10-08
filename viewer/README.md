@@ -31,7 +31,7 @@ cd viewer && npm run dev      # open http://127.0.0.1:5173/
 | `/?run=ID&live=1` | live mode, websocket, follows the newest step |
 | `/compare?a=ID&b=ID` | two runs side by side, one scrubber |
 
-Extra query keys: `t=STEP` starts paused at that world step, `cam=orbit|follow|map`, `names=both`
+Extra query keys: `t=STEP` starts paused at that world step, `cam=orbit|follow|map|pov` (pov is first person at eye height, facing the last move, with fog at the run's `view_radius`), `names=both`
 turns the alien name toggle on, `debug=1` shows draw calls and triangles.
 
 Keys: space play/pause, left/right one step (shift for 50), `e` next event, `m` next memory edit.

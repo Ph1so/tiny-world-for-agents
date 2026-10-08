@@ -3,7 +3,7 @@
 //   /?run=ID&live=1       follow a run that is still being written
 //   /compare?a=ID&b=ID    two runs side by side with one scrubber
 //   /                     run picker
-// Extra query keys: t=STEP (start there, paused), cam=orbit|follow|map, names=both (alien names on),
+// Extra query keys: t=STEP (start there, paused), cam=orbit|follow|map|pov, names=both (alien names on),
 // debug=1 (draw call counter).
 import "./style.css";
 import { listRuns, type RunListEntry } from "./data/source";

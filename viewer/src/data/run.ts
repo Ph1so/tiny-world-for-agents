@@ -23,6 +23,7 @@ export interface RunMeta {
   controller: string;
   model: string | null;
   memoryChars: number;
+  viewRadius: number;
 }
 
 export class RunData {
@@ -53,7 +54,7 @@ export class RunData {
 
   constructor(runId: string) {
     this.meta = { runId, dayLength: 300, nightStart: 200, dimSteps: 20, names: "familiar",
-      controller: "", model: null, memoryChars: 0 };
+      controller: "", model: null, memoryChars: 0, viewRadius: 12 };
   }
 
   // ------------------------------------------------------------------ ingest
@@ -75,6 +76,7 @@ export class RunData {
     const model = str("model", "null");
     this.meta.model = model === "null" ? null : model.replace(/^['"]|['"]$/g, "");
     this.meta.memoryChars = num("memory_chars", 0);
+    this.meta.viewRadius = num("view_radius", 12);
     this.version++;
   }
 
