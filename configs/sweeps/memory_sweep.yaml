@@ -4,7 +4,7 @@ name: memory_sweep
 controller: llm
 seeds: [1, 2, 3]
 max_steps: 1500
-models: [model_a, model_b]
+models: [haiku, sonnet]      # entry names from configs/models.yaml
 memory_chars: [0, 500, 2000, 8000, 32000]
 history_window: [3]
 names: familiar

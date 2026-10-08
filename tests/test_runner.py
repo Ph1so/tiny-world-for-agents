@@ -176,3 +176,15 @@ def test_rich_controller_is_logged_and_can_resume(tmp_path):
     assert ctl2.replayed == 3 and len(ctl2.results) == 5
     assert [r["i"] for r in rows(tmp_path / "x", "steps")] == [1, 2, 3, 4, 5]
     assert len(rows(tmp_path / "x", "world")) == 6
+
+
+def test_cli_resume_keeps_the_stored_max_steps(tmp_path):
+    """`--resume` without `--max-steps` must not fall back to the CLI default of 1500."""
+    from tinyworld.runner.run import main
+    main(["--controller", "sensible_bot", "--seed", "5", "--max-steps", "40", "--run-id", "r", "--runs-dir", str(tmp_path)])
+    steps = rows(tmp_path / "r", "steps")
+    (tmp_path / "r" / "steps.jsonl").write_text("".join(json.dumps(s) + "\n" for s in steps[:5]))
+    (tmp_path / "r" / "summary.json").unlink()
+    main(["--resume", "--run-id", "r", "--runs-dir", str(tmp_path)])
+    assert rows(tmp_path / "r", "steps") == steps
+    assert (tmp_path / "r" / "summary.json").exists()

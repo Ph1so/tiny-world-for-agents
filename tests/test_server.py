@@ -29,7 +29,7 @@ def test_list_runs(client):
     assert r["seed"] == 1
     assert r["memory_chars"] == 0
     assert r["world_steps"] >= 1500
-    assert r["finished"] is False          # samples have no summary.json yet
+    assert r["finished"] is True           # samples are complete runs with a summary.json
 
 
 def test_fetch_file(client):

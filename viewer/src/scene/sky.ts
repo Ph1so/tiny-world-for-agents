@@ -3,7 +3,7 @@
 import * as THREE from "three";
 import { SKY } from "./palette";
 
-const STAR_COUNT = 500;
+const STAR_COUNT = 1800;
 
 function glowTexture(): THREE.Texture {
   const c = document.createElement("canvas");
@@ -59,7 +59,9 @@ export class Sky {
 
     const pos = new Float32Array(STAR_COUNT * 3);
     for (let i = 0; i < STAR_COUNT; i++) {
-      const u = Math.random() * Math.PI * 2, v = Math.acos(Math.random() * 0.9 + 0.1);
+      // Down to a little under the horizon, because the camera sits above the world and looks down,
+      // so the sky it sees is the band just above the horizon.
+      const u = Math.random() * Math.PI * 2, v = Math.acos(Math.random() * 1.15 - 0.15);
       const rad = 260;
       pos[i * 3] = sx / 2 + rad * Math.sin(v) * Math.cos(u);
       pos[i * 3 + 1] = 10 + rad * Math.cos(v);
@@ -67,7 +69,7 @@ export class Sky {
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-    this.starMat = new THREE.PointsMaterial({ color: 0xfff6d8, size: 2.4, sizeAttenuation: false, transparent: true, opacity: 0, depthWrite: false, fog: false });
+    this.starMat = new THREE.PointsMaterial({ color: 0xfff6d8, size: 3, sizeAttenuation: false, transparent: true, opacity: 0, depthWrite: false, fog: false });
     this.stars = new THREE.Points(g, this.starMat);
     this.stars.frustumCulled = false;
     this.group.add(this.stars);

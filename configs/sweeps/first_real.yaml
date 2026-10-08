@@ -1,0 +1,15 @@
+# A first small real sweep: one cheap model, two memory sizes, two seeds, 300 steps.
+# About 150 model calls per run. Needs ANTHROPIC_API_KEY in .env.
+#   uv run python -m tinyworld.runner.sweep configs/sweeps/first_real.yaml
+name: first_real
+controller: llm
+seeds: [1, 2]
+max_steps: 300
+models: [haiku]
+memory_chars: [0, 2000]
+history_window: [3]
+names: familiar
+shuffle_recipes: false
+on_death: respawn_keep_memory
+budget_usd: 2
+parallel_runs: 2

@@ -4,7 +4,7 @@
 
 Short forms: move north 3 | mine 31 13 23 | place planks 31 14 23 | craft planks 3 sticks 2
              eat berries | attack 7 | wait 4
-Other commands: obs, valid, hash, quit
+Other commands: help, obs, valid, hash, quit
 """
 from __future__ import annotations
 
@@ -76,7 +76,9 @@ def main() -> None:
             break
         if line in ("quit", "exit", "q"):
             break
-        if line == "obs":
+        if line in ("help", "?"):
+            print(__doc__)
+        elif line == "obs":
             print(world.observe())
         elif line == "hash":
             print(world.state_hash())

@@ -1,4 +1,4 @@
-# Named model entries. A run picks one by name: --model sonnet
+# Named model entries. A run picks one by name: --model haiku
 #
 # provider: anthropic | openai_compatible | mock
 # model:    the provider's model id
@@ -9,11 +9,13 @@
 # sampling: temperature, top_p ... leave empty for provider defaults
 # base_url, api_key_env: openai_compatible only
 #
-# Prices and ids were filled on 2026-10-07. The official docs pages (docs.claude.com,
-# platform.openai.com/docs/pricing) could not be fetched from the build sandbox, so every
-# price below comes from third party price pages and the model id literals shipped in the
-# installed anthropic 1.12 and openai 3.26 SDKs. Check each one against the provider's
-# pricing page before a paid sweep. Every unverified value carries a "note".
+# Every entry has a note that says whether its id and price were checked against the
+# provider's own pages, and when. Verified on 2026-10-07 (review) against
+#   platform.claude.com/docs/en/models/overview, /docs/en/about-claude/pricing,
+#   /docs/en/about-claude/model-deprecations (Anthropic) and
+#   developers.openai.com/api/docs/models and /api/docs/pricing (OpenAI).
+# Anthropic cache_write_per_m is the 5 minute cache write price. Prices change; recheck
+# before a big sweep. The cheapest real models are `haiku` and `gpt6_luna`.
 
 models:
   mock:
@@ -28,17 +30,52 @@ models:
     mock: {kind: scripted}            # always waits one step
     note: no network, zero cost
 
-  sonnet:
-    provider: anthropic
-    model: claude-sonnet-4-6
-    input_per_m: 3.00
-    output_per_m: 15.00
-    cache_read_per_m: 0.30            # 0.1x input, the usual Anthropic cache read rate
-    cache_write_per_m: 3.75           # 1.25x input, the usual 5 minute cache write rate
-    max_tokens: 1024
-    note: id from the SDK literal list, price from a third party page (May 2026). Not verified on docs.claude.com.
+  # ---- Anthropic, current line-up -------------------------------------------------------
 
   haiku:
+    provider: anthropic
+    model: claude-haiku-5-5
+    input_per_m: 0.10
+    output_per_m: 0.50
+    cache_read_per_m: 0.01
+    cache_write_per_m: 0.125
+    max_tokens: 1024
+    note: verified 2026-10-07 (id on the models overview and deprecations pages, price on the pricing page, prompts up to 100k tokens). The cheap default.
+
+  sonnet:
+    provider: anthropic
+    model: claude-sonnet-5-5
+    input_per_m: 2.00
+    output_per_m: 10.00
+    cache_read_per_m: 0.10
+    cache_write_per_m: 2.50
+    max_tokens: 1024
+    note: verified 2026-10-07 (models overview, pricing, deprecations pages).
+
+  opus:
+    provider: anthropic
+    model: claude-opus-5-5
+    input_per_m: 4.00
+    output_per_m: 20.00
+    cache_read_per_m: 0.20
+    cache_write_per_m: 5.00
+    max_tokens: 1024
+    note: verified 2026-10-07 (models overview, pricing, deprecations pages).
+
+  sonnet_thinking:
+    provider: anthropic
+    model: claude-sonnet-5-5
+    input_per_m: 2.00
+    output_per_m: 10.00
+    cache_read_per_m: 0.10
+    cache_write_per_m: 2.50
+    max_tokens: 4096
+    thinking: {type: enabled, budget_tokens: 2048}
+    note: same id and price as sonnet (verified 2026-10-07), with extended thinking. Thinking tokens are billed as output.
+
+  # ---- Anthropic, older models still active (useful for "only the model changes") --------
+
+  haiku45:
     provider: anthropic
     model: claude-haiku-4-5-20251001
     input_per_m: 1.00
@@ -46,9 +83,19 @@ models:
     cache_read_per_m: 0.10
     cache_write_per_m: 1.25
     max_tokens: 1024
-    note: id from the SDK literal list, price from a third party page (May 2026). Not verified on docs.claude.com.
+    note: verified 2026-10-07 (deprecations page lists the id as active, pricing page has the price). Retires no sooner than 2026-10-15.
 
-  opus:
+  sonnet46:
+    provider: anthropic
+    model: claude-sonnet-4-6
+    input_per_m: 3.00
+    output_per_m: 15.00
+    cache_read_per_m: 0.30
+    cache_write_per_m: 3.75
+    max_tokens: 1024
+    note: verified 2026-10-07 (deprecations page lists the id as active, pricing page has the price).
+
+  opus47:
     provider: anthropic
     model: claude-opus-4-7
     input_per_m: 5.00
@@ -56,29 +103,42 @@ models:
     cache_read_per_m: 0.50
     cache_write_per_m: 6.25
     max_tokens: 1024
-    note: id from the SDK literal list, price from a third party page (May 2026). Not verified on docs.claude.com.
+    note: verified 2026-10-07 (deprecations page lists the id as active, pricing page has the price).
 
-  sonnet_thinking:
-    provider: anthropic
-    model: claude-sonnet-4-6
-    input_per_m: 3.00
-    output_per_m: 15.00
-    cache_read_per_m: 0.30
-    cache_write_per_m: 3.75
-    max_tokens: 4096
-    thinking: {type: enabled, budget_tokens: 2048}
-    note: same id and price as sonnet, with extended thinking. Thinking tokens are billed as output.
+  # ---- OpenAI --------------------------------------------------------------------------
 
-  gpt54:
+  gpt6_luna:
     provider: openai_compatible
-    model: gpt-5.4
+    model: gpt-6-luna
     api_key_env: OPENAI_API_KEY
-    input_per_m: 2.50
-    output_per_m: 15.00
-    cache_read_per_m: 0.25
+    input_per_m: 0.10
+    output_per_m: 0.50
+    cache_read_per_m: 0.01
     max_tokens: 2048
     reasoning: {reasoning_effort: low}
-    note: id from the openai SDK literal list, price from a third party page (Aug 2026). Not verified on platform.openai.com.
+    note: verified 2026-10-07 (developers.openai.com models and pricing pages, standard tier, short context). The cheap OpenAI model.
+
+  gpt61_sol:
+    provider: openai_compatible
+    model: gpt-6.1-sol
+    api_key_env: OPENAI_API_KEY
+    input_per_m: 2.00
+    output_per_m: 10.00
+    cache_read_per_m: 0.10
+    max_tokens: 2048
+    reasoning: {reasoning_effort: low}
+    note: verified 2026-10-07 (developers.openai.com models and pricing pages, standard tier, short context).
+
+  gpt6_astra:
+    provider: openai_compatible
+    model: gpt-6-astra
+    api_key_env: OPENAI_API_KEY
+    input_per_m: 10.00
+    output_per_m: 50.00
+    cache_read_per_m: 1.00
+    max_tokens: 2048
+    reasoning: {reasoning_effort: low}
+    note: verified 2026-10-07 (developers.openai.com models and pricing pages, standard tier, short context). Expensive.
 
   gpt54_mini:
     provider: openai_compatible
@@ -89,18 +149,9 @@ models:
     cache_read_per_m: 0.075
     max_tokens: 2048
     reasoning: {reasoning_effort: low}
-    note: id from the openai SDK literal list, price from a third party page (Aug 2026). Not verified on platform.openai.com.
+    note: unverified. Not on the OpenAI models or pricing pages on 2026-10-07 (may be retired). Id from the openai SDK literal list, price from a third party page (Aug 2026).
 
-  gpt5_mini:
-    provider: openai_compatible
-    model: gpt-5-mini
-    api_key_env: OPENAI_API_KEY
-    input_per_m: 0.25
-    output_per_m: 2.00
-    cache_read_per_m: 0.025
-    max_tokens: 2048
-    reasoning: {reasoning_effort: low}
-    note: id from the openai SDK literal list, price from a third party page (Aug 2026). Not verified on platform.openai.com.
+  # ---- Other endpoints -----------------------------------------------------------------
 
   openrouter_example:
     provider: openai_compatible
@@ -110,7 +161,7 @@ models:
     input_per_m: 3.00
     output_per_m: 15.00
     max_tokens: 1024
-    note: guessed OpenRouter id and price, check openrouter.ai/models before use
+    note: unverified. Guessed OpenRouter id and price, check openrouter.ai/models before use.
 
   ollama_example:
     provider: openai_compatible
@@ -120,4 +171,4 @@ models:
     input_per_m: 0.0
     output_per_m: 0.0
     max_tokens: 1024
-    note: local model, free. Use whatever `ollama list` shows as the id.
+    note: local model, free, unverified id. Use whatever `ollama list` shows as the id.

@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
+import time
 from pathlib import Path
 from typing import Any, Callable
 
@@ -239,10 +240,16 @@ def run(run_id: str, controller_name: str = "sensible_bot", seed: int = 1, max_s
         controller = make_llm(config, world_cfg)
     if controller is None:
         controller = make_bot(controller_name, seed)
+    started = time.monotonic()
     try:
         run_loop(world, controller, logger, max_steps, on_step)
     finally:
         logger.close()
+    # The loop ended on its own (max_steps or end_run), so the run is complete: write the
+    # sixth file. A killed or interrupted run leaves no summary.json, which is how the sweep
+    # runner tells a finished run from one to resume.
+    from tinyworld.analysis.metrics import write_summary
+    write_summary(run_dir, wall_clock_s=time.monotonic() - started)
     return world
 
 
@@ -264,6 +271,8 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--shuffle-recipes", action="store_true", default=None)
     ap.add_argument("--on-death", default=None)
     ap.add_argument("--resume", action="store_true")
+    ap.add_argument("--step-delay", type=float, default=0.0,
+                    help="seconds to sleep after each agent step, so a bot run can be watched live in the viewer")
     args = ap.parse_args(argv)
 
     # Precedence: CLI flag, then the run config file, then these defaults.
@@ -287,8 +296,11 @@ def main(argv: list[str] | None = None) -> None:
     else:
         default_id = f"{opts['controller']}_seed{opts['seed']}"
     run_id = opts["run_id"] or default_id
-    world = run(run_id, opts["controller"], opts["seed"], opts["max_steps"], cfg, opts["runs_dir"], args.resume,
-                extra_config=extra)
+    on_step = (lambda rec: time.sleep(args.step_delay)) if args.step_delay > 0 else None
+    # On resume the stored config's max_steps wins unless --max-steps was given on the command line.
+    max_steps = 0 if args.resume and args.max_steps is None else opts["max_steps"]
+    world = run(run_id, opts["controller"], opts["seed"], max_steps, cfg, opts["runs_dir"], args.resume,
+                extra_config=extra, on_step=on_step)
     print(f"{run_id}: world steps {world.t}, deaths {world.deaths}, "
           f"crafted {world.firsts['craft']}, folder {Path(opts['runs_dir']) / run_id}")
 

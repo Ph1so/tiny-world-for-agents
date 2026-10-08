@@ -17,8 +17,9 @@ class Builder {
     const src = rounded
       ? new RoundedBoxGeometry(w, h, d, 2, Math.min(radius, Math.min(w, h, d) / 2.2))
       : new THREE.BoxGeometry(w, h, d);
-    const g = src.toNonIndexed();
-    src.dispose();
+    // RoundedBoxGeometry is already non-indexed; calling toNonIndexed on it logs a warning.
+    const g = src.index ? src.toNonIndexed() : src;
+    if (g !== src) src.dispose();
     g.deleteAttribute("uv");
     const n = g.getAttribute("position").count;
     const colors = new Float32Array(n * 3);

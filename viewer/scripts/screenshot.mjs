@@ -33,7 +33,7 @@ page.on("pageerror", (e) => console.log("[pageerror]", e.message));
 await page.goto(url, { waitUntil: "networkidle" });
 await page.waitForFunction(() => {
   const o = document.querySelector(".overlay");
-  return o && getComputedStyle(o).display === "none";
+  return !o || getComputedStyle(o).display === "none";   // the run picker has no overlay
 }, null, { timeout: 60000 });
 await page.waitForTimeout(1500);
 if (scrollTo) await page.evaluate((sel) => document.querySelector(sel)?.scrollIntoView({ block: "start" }), scrollTo);

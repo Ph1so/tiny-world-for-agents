@@ -34,7 +34,13 @@ from tinyworld.analysis.metrics import ACTIONS, compute_metrics
 from tinyworld.analysis.replay import read_jsonl
 
 VIEWER_URL = "http://localhost:8000"
-TIME_BIN = 100                      # world steps per bin in the over-time charts
+TIME_BIN = 100                      # world steps per bin in the over-time charts, for runs of 1500 steps or more
+
+
+def time_bin(max_t: int) -> int:
+    """Bin width for the over-time charts: TIME_BIN for long runs, else about 15 bins (a 200 step
+    run gets 10 step bins). Always a multiple of 10 so the tick labels stay round."""
+    return max(10, min(TIME_BIN, int(round(max_t / 15 / 10)) * 10))
 
 # Palette from the dataviz skill (references/palette.md), light mode.
 CATEGORICAL = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"]
@@ -58,7 +64,7 @@ METRICS = [
     ("night_torch_share", "Night steps near a torch", "Share of night steps in the open but within torch light."),
     ("night_open_share", "Night steps in the open", "Share of night steps with no walls and no torch nearby."),
     ("longest_same_action_streak", "Longest same action streak", "Most agent steps in a row with the same action name. High means looping."),
-    ("action_entropy_50", "Action entropy (50 step window)", "Mean entropy in bits of action names over a sliding window. Low means repetitive."),
+    ("action_entropy_50", "Action entropy", "Mean entropy in bits of action names over a sliding window of 50 agent steps. Low means repetitive."),
     ("invalid_actions", "Invalid actions", "Actions the world refused (bad arguments, missing items)."),
     ("unreadable_replies", "Unreadable replies", "Replies that could not be parsed. Each one costs a step of waiting."),
     ("memory_chars_mean", "Memory characters used", "Mean size of the memory file over the run."),
@@ -117,8 +123,9 @@ def memory_colors(sizes: list[int]) -> dict[int, str]:
 
 def base_layout(**kw) -> dict:
     lay = dict(paper_bgcolor=SURFACE, plot_bgcolor=SURFACE, font=dict(family=FONT, color=INK2, size=12),
-               margin=dict(l=48, r=16, t=40, b=40), hovermode="closest",
-               legend=dict(orientation="h", y=-0.18, x=0, font=dict(color=INK2)),
+               margin=dict(l=48, r=16, t=44, b=48), hovermode="closest",
+               # Top right, on the title line, so it never sits on the x axis title.
+               legend=dict(orientation="h", y=1.0, yanchor="bottom", x=1, xanchor="right", font=dict(color=INK2)),
                xaxis=dict(gridcolor=GRID, zerolinecolor=AXIS, linecolor=AXIS, tickfont=dict(color=MUTED)),
                yaxis=dict(gridcolor=GRID, zerolinecolor=AXIS, linecolor=AXIS, tickfont=dict(color=MUTED)))
     lay.update(kw)
@@ -171,7 +178,8 @@ def metric_figure(df: pd.DataFrame, key: str, title: str, colors: dict[str, str]
     fig.update_layout(**base_layout(title=dict(text=title, font=dict(color=INK, size=14), x=0, xanchor="left"),
                                     barmode="overlay", height=300, showlegend=len(models) > 1))
     fig.update_xaxes(title=dict(text="memory characters", font=dict(color=MUTED)), tickmode="array",
-                     tickvals=list(range(len(xcats))), ticktext=xcats, range=[-0.6, len(xcats) - 0.4])
+                     tickvals=list(range(len(xcats))), ticktext=xcats, range=[-0.6, len(xcats) - 0.4],
+                     zeroline=False)   # x is categorical in spirit, a line at "0" means nothing
     fig.update_yaxes(rangemode="tozero")
     style_axes(fig)
     return fig
@@ -180,10 +188,10 @@ def metric_figure(df: pd.DataFrame, key: str, title: str, colors: dict[str, str]
 # ---------------------------------------------------------------- over-time data
 
 
-def activity_over_time(run_dir: Path, max_t: int) -> np.ndarray:
-    """Share of world steps per action per TIME_BIN bin. Shape (bins, len(ACTIONS))."""
+def activity_over_time(run_dir: Path, max_t: int, tb: int = TIME_BIN) -> np.ndarray:
+    """Share of world steps per action per bin of tb world steps. Shape (bins, len(ACTIONS))."""
     steps = read_jsonl(run_dir / "steps.jsonl")
-    nb = max(1, int(np.ceil(max_t / TIME_BIN)))
+    nb = max(1, int(np.ceil(max_t / tb)))
     counts = np.zeros((nb, len(ACTIONS)))
     for s in steps:
         name = (s.get("action") or {}).get("name")
@@ -191,21 +199,21 @@ def activity_over_time(run_dir: Path, max_t: int) -> np.ndarray:
             continue
         a = ACTIONS.index(name)
         for t in range(s["t_start"], max(s["t_end"], s["t_start"] + 1)):
-            b = min(t // TIME_BIN, nb - 1)
+            b = min(t // tb, nb - 1)
             counts[b, a] += 1
     tot = counts.sum(axis=1, keepdims=True)
     return np.divide(counts, tot, out=np.full_like(counts, np.nan), where=tot > 0)
 
 
-def memory_over_time(run_dir: Path, max_t: int) -> np.ndarray:
-    """Memory characters used at the end of each TIME_BIN bin (last value seen, carried forward)."""
+def memory_over_time(run_dir: Path, max_t: int, tb: int = TIME_BIN) -> np.ndarray:
+    """Memory characters used at the end of each bin of tb world steps (last value seen, carried forward)."""
     steps = read_jsonl(run_dir / "steps.jsonl")
-    nb = max(1, int(np.ceil(max_t / TIME_BIN)))
+    nb = max(1, int(np.ceil(max_t / tb)))
     out = np.full(nb, np.nan)
     last = 0.0
     for s in steps:
         last = float(s.get("memory_chars_used") or 0)
-        out[min(s["t_end"] // TIME_BIN, nb - 1)] = last
+        out[min(s["t_end"] // tb, nb - 1)] = last
     for b in range(1, nb):
         if np.isnan(out[b]):
             out[b] = out[b - 1]
@@ -224,10 +232,11 @@ def activity_figure(df: pd.DataFrame, max_t: int) -> go.Figure:
     ncol = min(3, len(conds))
     nrow = int(np.ceil(len(conds) / ncol))
     fig = make_subplots(rows=nrow, cols=ncol, subplot_titles=conds, shared_yaxes=True,
-                        horizontal_spacing=0.05, vertical_spacing=0.18 / max(1, nrow))
-    xs = [(b + 0.5) * TIME_BIN for b in range(int(np.ceil(max_t / TIME_BIN)))]
+                        horizontal_spacing=0.05, vertical_spacing=0.3 / max(1, nrow))
+    tb = time_bin(max_t)
+    xs = [(b + 0.5) * tb for b in range(int(np.ceil(max_t / tb)))]
     for ci, cond in enumerate(conds):
-        arrs = [activity_over_time(Path(d), max_t) for d in df.loc[df["condition"] == cond, "_dir"]]
+        arrs = [activity_over_time(Path(d), max_t, tb) for d in df.loc[df["condition"] == cond, "_dir"]]
         if not arrs:
             continue
         with warnings.catch_warnings():
@@ -240,7 +249,10 @@ def activity_figure(df: pd.DataFrame, max_t: int) -> go.Figure:
                             showlegend=ci == 0, line=dict(width=0.5, color=CATEGORICAL[a]),
                             fillcolor=CATEGORICAL[a], hovertemplate=f"{action}: %{{y:.0%}} at step %{{x}}<extra></extra>",
                             row=r, col=c)
-    fig.update_layout(**base_layout(height=max(280, 240 * nrow), showlegend=True, hovermode="x unified"))
+    # The legend goes under the panels: with three panels per row it would sit on a subplot title.
+    fig.update_layout(**base_layout(height=max(300, 290 * nrow), showlegend=True, hovermode="x unified",
+                                    legend=dict(orientation="h", y=-0.22 / max(1, nrow), yanchor="top", x=0, xanchor="left", font=dict(color=INK2)),
+                                    margin=dict(l=48, r=16, t=44, b=72)))
     fig.update_yaxes(range=[0, 1], tickformat=".0%")
     fig.update_xaxes(title=dict(text="world step", font=dict(color=MUTED)), row=nrow)
     style_axes(fig)
@@ -252,12 +264,13 @@ def activity_figure(df: pd.DataFrame, max_t: int) -> go.Figure:
 def memory_figure(df: pd.DataFrame, max_t: int, mem_colors: dict[int, str]) -> go.Figure:
     models = list(dict.fromkeys(df["model"]))
     fig = make_subplots(rows=1, cols=len(models), subplot_titles=models, shared_yaxes=True, horizontal_spacing=0.05)
-    xs = [(b + 1) * TIME_BIN for b in range(int(np.ceil(max_t / TIME_BIN)))]
+    tb = time_bin(max_t)
+    xs = [(b + 1) * tb for b in range(int(np.ceil(max_t / tb)))]
     for mi, model in enumerate(models):
         sub = df[df["model"] == model]
         for mem in sorted(sub["memory_chars"].unique()):
             runs = sub[sub["memory_chars"] == mem]
-            arrs = [memory_over_time(Path(d), max_t) for d in runs["_dir"]]
+            arrs = [memory_over_time(Path(d), max_t, tb) for d in runs["_dir"]]
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", RuntimeWarning)
                 mean = np.nanmean(np.stack(arrs), axis=0)
@@ -381,7 +394,9 @@ def build_report(sweep_dir: str | Path, viewer: str = VIEWER_URL) -> str:
     models = list(dict.fromkeys(sorted(df["model"].unique())))
     mcolors = model_colors(models)
     mem_colors = memory_colors([int(m) for m in df["memory_chars"].unique()])
-    max_t = int(max(1, df["world_steps"].max()))
+    # The planned length, not the real one: the last action may overshoot max_steps by a few
+    # world steps and those would otherwise make a nearly empty last bin.
+    max_t = int(max(1, df["max_steps"].max() if "max_steps" in df else df["world_steps"].max()))
     n_seeds = df["seed"].nunique()
     status_p = sweep_dir / "sweep_status.json"
     status = json.loads(status_p.read_text()) if status_p.exists() else {}
@@ -406,7 +421,7 @@ def build_report(sweep_dir: str | Path, viewer: str = VIEWER_URL) -> str:
     parts.append("</div>")
 
     parts.append("<h2>Activity share over time</h2><p>What the agent spent its world steps on, per condition, "
-                 f"averaged over seeds in bins of {TIME_BIN} world steps.</p>")
+                 f"averaged over seeds in bins of {time_bin(max_t)} world steps.</p>")
     parts.append(card(activity_figure(df, max_t),
                       "Stacked shares of world steps per action. A flat band of one colour over a long stretch means "
                       "the agent kept doing the same thing. Nights are steps 200 to 299 of each 300 step day.", first, wide=True))
@@ -431,6 +446,10 @@ def build_report(sweep_dir: str | Path, viewer: str = VIEWER_URL) -> str:
                  f"Start the server on this sweep folder first: <code>python -m tinyworld.server --runs {html.escape(str(sweep_dir))}</code>.</p>")
     parts.append(runs_table(df, viewer))
     parts.append("</main>")
+    # The first charts are drawn while the page is still loading, before the grid has settled,
+    # so they keep the full page width and get clipped. Resize every plot once the page is in.
+    parts.append("<script>window.addEventListener('load',function(){document.querySelectorAll('.js-plotly-plot')"
+                 ".forEach(function(p){Plotly.Plots.resize(p);});});</script>")
     body = "".join(parts)
     return (f"<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'>"
             f"<title>Sweep report {html.escape(name)}</title><style>{CSS}</style></head><body>{body}</body></html>")

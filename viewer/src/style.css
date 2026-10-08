@@ -48,7 +48,7 @@ select { font: inherit; border: 1px solid var(--line); border-radius: 999px; pad
 .run-view { flex: 1; min-width: 0; display: flex; gap: 10px; }
 .stage-row.compare .run-view { flex-direction: column; }
 .stage-row.compare .run-view .side { width: auto; flex: 0 0 240px; flex-direction: row; overflow-x: auto; }
-.stage-row.compare .run-view .side .panel { flex: 0 0 300px; }
+.stage-row.compare .run-view .side .panel { flex: 0 0 300px; overflow-y: auto; }
 .stage-row.compare .run-view .stage { min-height: 200px; }
 
 .stage { position: relative; flex: 1; min-width: 0; border-radius: var(--radius); overflow: hidden; background: #a8dcf5; box-shadow: 0 4px 18px rgba(80, 60, 120, 0.12); }
