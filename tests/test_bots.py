@@ -45,7 +45,7 @@ def test_sensible_bot_only_sends_valid_actions():
 
 @pytest.mark.parametrize("seed", range(1, 21))
 def test_every_recipe_is_reachable_in_play(sensible_runs, seed):
-    """The sensible bot starts with nothing and ends up having made all 13 things."""
+    """The sensible bot starts with nothing and ends up having made all 17 things."""
     w, _ = sensible_runs[seed]
     assert sorted(w.firsts["craft"]) == sorted(r.output for r in BASE)
 

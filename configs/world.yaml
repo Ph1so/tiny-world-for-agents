@@ -11,6 +11,10 @@ night_start: 200            # steps 0..199 are day, 200..299 are night
 dim_steps: 20               # last steps of day and of night are "dim"
 torch_light: 6              # a torch this close turns dark into dim
 
+inventory_slots: 10         # a slot holds one tool or up to stack_size of an item; 0 = no limit
+stack_size: 32
+chest_slots: 20
+
 reach: 3                    # mine and place distance
 attack_reach: 2
 station_reach: 2            # workbench or furnace "nearby"
@@ -44,6 +48,7 @@ hardness:
   planks: 3
   workbench: 4
   door: 4
+  chest: 4
   furnace: 6
   stone: 8
   coal ore: 10
@@ -54,10 +59,14 @@ durability:                 # uses before the tool is gone
   wood pickaxe: 30
   stone pickaxe: 60
   iron pickaxe: 150
+  wood sword: 20
   stone sword: 40
   iron sword: 100
+  iron helmet: 30
+  iron chestplate: 40
 hand_damage: 2
-sword_damage: {stone sword: 4, iron sword: 6}
+sword_damage: {wood sword: 3, stone sword: 4, iron sword: 6}
+armor: {iron helmet: 1, iron chestplate: 2}   # zombie damage taken off per piece held, at least 1 gets through
 
 terrain:
   base_height: 15.2
@@ -70,10 +79,10 @@ terrain:
   stone_line: 19            # ground at or above this height is bare stone
   lake_radius: 4.5
   lake_depth: 3
-  coal_rate: 0.03           # share of stone cells that are coal ore
-  iron_rate: 0.02
-  surface_coal: 8           # extra ore cells put on the bare stone surface
-  surface_iron: 8
+  coal_rate: 0.05           # share of stone cells that are coal ore
+  iron_rate: 0.035
+  surface_coal: 14           # extra ore cells put on the bare stone surface
+  surface_iron: 14
   forest_tree_rate: 0.10
   plain_tree_rate: 0.006
   min_trees: 10
@@ -90,12 +99,12 @@ creatures:
   animal_count_mult: 1.0    # scales sheep+chicken start, max, and respawn
   health: {sheep: 6, chicken: 4, zombie: 10}
   meat: {sheep: 2, chicken: 1, zombie: 0}
-  zombie_max: 6
-  zombie_spawn_prob: 0.08   # chance per night step while below zombie_max
+  zombie_max: 9
+  zombie_spawn_prob: 0.12   # chance per night step while below zombie_max
   zombie_spawn_min_dist: 12
   zombie_spawn_max_dist: 24
-  zombie_chase_dist: 10
-  zombie_step_every: 2      # world steps per zombie move
+  zombie_chase_dist: 20
+  zombie_step_every: 1.5    # world steps per zombie move (1.5 = moves on 2 of every 3 steps)
   zombie_damage: 3
   zombie_cooldown: 2
   zombie_breaks: []         # block names a blocked zombie can break (empty = none)

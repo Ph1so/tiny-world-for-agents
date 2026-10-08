@@ -43,7 +43,7 @@ def time_bin(max_t: int) -> int:
     return max(10, min(TIME_BIN, int(round(max_t / 15 / 10)) * 10))
 
 # Palette from the dataviz skill (references/palette.md), light mode.
-CATEGORICAL = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"]
+CATEGORICAL = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948", "#8a5a2b", "#5f6b7a"]
 SEQUENTIAL = ["#86b6ef", "#5598e7", "#2a78d6", "#1c5cab", "#104281", "#0d366b"]   # ordinal, steps 250..700
 SURFACE, PAGE = "#fcfcfb", "#f9f9f7"
 INK, INK2, MUTED, GRID, AXIS = "#0b0b0b", "#52514e", "#898781", "#e1e0d9", "#c3c2b7"

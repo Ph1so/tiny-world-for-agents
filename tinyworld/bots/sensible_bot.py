@@ -10,7 +10,7 @@ from collections import deque
 
 import numpy as np
 
-from tinyworld.sim import defs
+from tinyworld.sim import defs, text as T
 from tinyworld.sim.recipes import reach_order
 from tinyworld.sim.world import cheb
 
@@ -19,7 +19,10 @@ FILL = ["dirt", "grass", "sand", "leaves", "stone", "planks", "log"]      # used
 SOFT = ["grass", "dirt", "sand", "leaves"]                                 # dug up for wall material
 BLOCK_SOURCE = {"log": "log", "stone": "stone", "coal": "coal ore", "iron ore": "iron ore",
                 "dirt": "dirt", "grass": "grass", "sand": "sand", "leaves": "leaves", "berries": "berry bush"}
-GOALS = ["wood pickaxe", "stone pickaxe", "stone sword", "furnace", "torch", "iron pickaxe", "iron sword", "door"]
+GOALS = ["wood pickaxe", "wood sword", "stone pickaxe", "stone sword", "furnace", "torch", "iron pickaxe", "iron sword",
+         "door", "chest", "iron helmet", "iron chestplate"]
+JUNK = ["leaves", "sand", "grass", "chest", "log", "sticks", "planks", "coal", "dirt", "torch", "stone", "iron ore"]   # dropped first
+KEEP = {"dirt": 9, "stone": 12, "log": 3, "planks": 8, "sticks": 4, "coal": 4, "iron ore": 8}   # held back from drops
 STEP_DIR = {(0, -1): "north", (0, 1): "south", (1, 0): "east", (-1, 0): "west"}
 
 
@@ -71,6 +74,9 @@ class SensibleBot:
         a = self._eat(w)
         if a:
             return a
+        a = self._tidy(w)
+        if a:
+            return a
         if tod >= self.shelter_at:
             return self._shelter(w)
         if self.walls:
@@ -90,7 +96,7 @@ class SensibleBot:
                 continue
             a = self._station(w, "furnace", frozenset()) if goal == "furnace" and w.inv.get("furnace") \
                 else self._want(w, goal, 1, frozenset())
-            if a:
+            if a and a != WAIT:                                    # a stalled goal (nothing reachable) is skipped
                 return a
         if w.inv.get("furnace"):
             a = self._station(w, "furnace", frozenset())
@@ -104,11 +110,50 @@ class SensibleBot:
             a = self._want(w, self._pick_for(1), 1, frozenset())
             if a:
                 return a
-        if self._food_points(w) < 3 * self.food_target:
+        hungry = self._food_points(w) < 3 * self.food_target
+        if hungry:
             a = self._get_food(w)
+            if a and a != WAIT:
+                return a
+        if hungry or w.pos[1] < w.spawn[1] - 2:                    # nothing reachable from here: dig out
+            a = self._climb(w)
             if a:
                 return a
         return {"name": "wait", "steps": 4}
+
+    def _climb(self, w) -> dict | None:
+        """Cut a staircase toward the start point, one step up at a time."""
+        x, y, z = w.pos
+        dx, dz = w.spawn[0] - x, w.spawn[2] - z
+        d = ("east" if dx > 0 else "west") if abs(dx) >= abs(dz) else ("south" if dz > 0 else "north")
+        sx, _, sz = defs.DIRS[d]
+        for c in ((x, y + 2, z), (x + sx, y + 1, z + sz), (x + sx, y + 2, z + sz)):
+            if w.inb(*c) and not defs.AGENT_PASS[w.bid(*c)]:
+                return {"name": "mine", "x": c[0], "y": c[1], "z": c[2]} if w.mine_steps(w.block(*c)) else None
+        return {"name": "move", "dir": d, "steps": 1}
+
+    def _tidy(self, w) -> dict | None:
+        """With under two slots free, drop an outdone or spare tool, else junk beyond what it keeps.
+        After a pickup failed for want of room, drop a whole junk stack."""
+        limit = w.cfg.inventory_slots
+        full = w.last_result is not None and w.last_result.startswith(T.NO_ROOM)
+        if limit <= 0 or (limit - w.slots(w.inv) >= 2 and not full):
+            return None
+        for group in (list(defs.PICKAXES), defs.SWORDS):
+            held = [t for t in group if w.inv.get(t, 0)]
+            for t in held[:-1]:                                    # groups run weakest to strongest
+                return {"name": "drop", "items": {t: w.inv[t]}}
+            if held and w.inv[held[-1]] > 1:
+                return {"name": "drop", "items": {held[-1]: w.inv[held[-1]] - 1}}
+        for item in JUNK:
+            if w.inv.get(item, 0) > KEEP.get(item, 0):
+                return {"name": "drop", "items": {item: w.inv[item] - KEEP.get(item, 0)}}
+        if full:                                                   # not what the failed action was using
+            used = w.last_action or ""
+            item = next((i for i in JUNK if w.inv.get(i, 0) and w.dn(i) not in used), None)
+            if item:
+                return {"name": "drop", "items": {item: w.inv[item]}}
+        return None
 
     def _food_points(self, w) -> int:
         return sum(w.inv.get(i, 0) * v for i, v in w.cfg.food.items())

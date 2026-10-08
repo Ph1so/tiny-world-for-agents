@@ -6,12 +6,13 @@
 // Extra query keys: t=STEP (start there, paused), cam=orbit|follow|map|pov, names=both (alien names on),
 // debug=1 (draw call counter).
 import "./style.css";
-import { listRuns, type RunListEntry } from "./data/source";
+import { getOptions, listRuns, type RunListEntry } from "./data/source";
 import { Player } from "./player";
 import { RunView } from "./runview";
 import { Controls } from "./ui/controls";
 import { button, clear, el } from "./ui/dom";
 import type { NameOpts } from "./ui/panels";
+import { newRunForm, resumeFromPicker, RunControlBar } from "./ui/runcontrol";
 
 const app = document.getElementById("app")!;
 const params = new URLSearchParams(location.search);
@@ -22,17 +23,26 @@ async function picker(): Promise<void> {
   const root = el("div", { class: "picker" });
   root.append(el("h1", { text: "tiny world" }), el("p", { class: "muted", text: "pick a run to replay, or follow one live" }));
   app.append(root);
+  const opts = await getOptions();
+  if (opts.controls) {
+    const details = el("details", { class: "new-run-box" }, el("summary", { text: "＋ new run" }), newRunForm(opts));
+    root.append(details);
+  }
   let runs: RunListEntry[] = [];
   try { runs = await listRuns(); } catch (e) { root.append(el("p", { class: "error", text: `could not list runs: ${(e as Error).message}` })); return; }
   if (runs.length === 0) root.append(el("p", { text: "no runs found. Start the server with --runs pointing at a folder of runs." }));
   const table = el("table", { class: "runs" });
-  table.append(el("tr", {}, ...["run", "controller", "model", "memory", "seed", "steps", "", ""].map((h) => el("th", { text: h }))));
+  table.append(el("tr", {}, ...["run", "controller", "model", "memory", "seed", "steps", "state", "", ""].map((h) => el("th", { text: h }))));
   for (const r of runs) {
     const row = el("tr", {},
       el("td", {}, el("a", { href: `/?run=${encodeURIComponent(r.run_id)}`, text: r.run_id })),
-      el("td", { text: r.controller ?? "" }), el("td", { text: r.model ?? "–" }), el("td", { text: String(r.memory_chars) }),
-      el("td", { text: String(r.seed ?? "") }), el("td", { text: `${r.world_steps}${r.finished ? "" : " (open)"}` }),
-      el("td", {}, el("a", { href: `/?run=${encodeURIComponent(r.run_id)}&live=1`, text: "live" })),
+      el("td", { text: r.controller ?? "" }),
+      el("td", { text: (r.model ?? "–") + (r.lineage ? `  ·  ${r.lineage} g${r.generation ?? "?"}` : "") }),
+      el("td", { text: String(r.memory_chars) + (r.longterm_chars ? ` + ${r.longterm_chars}` : "") }),
+      el("td", { text: String(r.seed ?? "") }), el("td", { text: `${r.world_steps}${r.max_steps ? " / " + r.max_steps : ""}` }),
+      el("td", {}, el("span", { class: "state-badge", "data-state": r.state ?? "", text: r.state ?? "" }),
+        r.state === "stopped" && opts.controls ? button("resume", () => void resumeFromPicker(r.run_id), "small") : null),
+      el("td", {}, el("a", { href: `/?run=${encodeURIComponent(r.run_id)}&live=1&cam=follow`, text: "live" })),
       el("td", {}, button("compare…", () => {
         const other = prompt("compare with run id:", runs.find((x) => x.run_id !== r.run_id)?.run_id ?? "");
         if (other) location.href = `/compare?a=${encodeURIComponent(r.run_id)}&b=${encodeURIComponent(other)}`;
@@ -45,7 +55,7 @@ async function picker(): Promise<void> {
 function mount(views: RunView[], player: Player, names: NameOpts, live: boolean): void {
   clear(app);
   player.live = live;
-  if (live) player.speed = 50;
+  if (live) player.speed = 5;
   const stageRow = el("div", { class: `stage-row ${views.length > 1 ? "compare" : ""}` }, ...views.map((v) => v.root));
   const first = views[0];
   const controls = new Controls(player, {
@@ -65,6 +75,12 @@ function mount(views: RunView[], player: Player, names: NameOpts, live: boolean)
     el("span", { class: "muted", text: views.length > 1 ? `compare: ${views.map((v) => v.run.meta.runId).join("  vs  ")}` : (live ? "live" : "replay") }),
     el("span", { class: "grow" }),
     el("span", { class: "muted small", text: "space play/pause · ←/→ step · e next event · m next memory edit · drag to orbit" }));
+  if (views.length === 1) {
+    // Pause, resume or stop the run itself (shown only while it is not finished).
+    const rc = new RunControlBar(first.run.meta.runId, live);
+    rc.onState = (s) => { first.runState = s; };
+    controls.root.append(rc.root);
+  }
   app.append(header, stageRow, controls.root);
   for (const v of views) v.resize();
   window.addEventListener("resize", () => views.forEach((v) => v.resize()));

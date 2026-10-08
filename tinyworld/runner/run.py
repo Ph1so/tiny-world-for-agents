@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import time
 from pathlib import Path
@@ -24,6 +25,24 @@ import yaml
 from tinyworld.sim import World, WorldConfig, load_world_config
 
 CONFIGS_DIR = Path(__file__).resolve().parents[2] / "configs"
+
+# Control files in the run folder. Anything (the viewer server, a shell) can create them; the
+# runner looks between agent steps, so a pause or stop never cuts a model call short.
+PAUSE_FILE = "pause"        # present: wait before the next step until it is removed
+STOP_FILE = "stop"          # present: end the loop without a summary.json, so --resume continues
+PID_FILE = "runner.pid"     # written while a runner is working on the folder
+
+
+def hold(run_dir: Path) -> bool:
+    """Wait while the pause file exists. True if a stop was asked for (both files are removed)."""
+    while True:
+        if (run_dir / STOP_FILE).exists():
+            (run_dir / STOP_FILE).unlink(missing_ok=True)
+            (run_dir / PAUSE_FILE).unlink(missing_ok=True)
+            return True
+        if not (run_dir / PAUSE_FILE).exists():
+            return False
+        time.sleep(0.2)
 
 
 def resolve_world_path(value: str | None) -> str | None:
@@ -43,6 +62,8 @@ def resolve_world_path(value: str | None) -> str | None:
 
 
 FILES = ["world", "steps", "memory", "events"]
+# Written only by runs with a long-term file (a lineage), same line format as memory.jsonl.
+LONGTERM_FILE = "longterm"
 # Per step values a controller may return next to "action". Bots return none of them.
 STEP_DEFAULTS: dict[str, Any] = {
     "raw_reply": "", "thought": "", "parse_ok": True, "memory_chars_used": 0, "memory_rejected": False,
@@ -52,7 +73,8 @@ STEP_DEFAULTS: dict[str, Any] = {
 #   "memory": {"ops": [...], "accepted": bool, "over_by": int, "text": str, "chars": int, "limit": int}
 #             written to memory.jsonl for this step (leave out when no memory op was sent)
 #   "events": [{"type": "parse_fail", "detail": {...}}, ...]  written to events.jsonl with t and i added
-EXTRA_KEYS = ["memory", "events"]
+#   "longterm": same shape as "memory", for the long-term file, written to longterm.jsonl
+EXTRA_KEYS = ["memory", "events", "longterm"]
 
 
 def git_commit() -> str | None:
@@ -87,17 +109,22 @@ class RunLogger:
     on disk, which is written last.
     """
 
-    def __init__(self, run_dir: str | Path, resume: bool = False):
+    def __init__(self, run_dir: str | Path, resume: bool = False, longterm: bool = False):
         self.dir = Path(run_dir)
         self.dir.mkdir(parents=True, exist_ok=True)
         self.steps: list[dict] = []          # complete steps already on disk (only filled on resume)
         self.memory: list[dict] = []
-        if resume and (self.dir / "steps.jsonl").exists():
+        self.longterm: list[dict] = []
+        resuming = resume and (self.dir / "steps.jsonl").exists()
+        if resuming:
+            longterm = longterm or (self.dir / f"{LONGTERM_FILE}.jsonl").exists()
+        self.files = FILES + ([LONGTERM_FILE] if longterm else [])
+        if resuming:
             self._trim()
         else:
-            for name in FILES:
+            for name in self.files:
                 (self.dir / f"{name}.jsonl").write_text("")
-        self._fh = {name: open(self.dir / f"{name}.jsonl", "a") for name in FILES}
+        self._fh = {name: open(self.dir / f"{name}.jsonl", "a") for name in self.files}
 
     @property
     def last_i(self) -> int:
@@ -107,12 +134,14 @@ class RunLogger:
         """Cut every file back to the last complete agent step."""
         self.steps = _read_jsonl(self.dir / "steps.jsonl")
         last = self.last_i
-        for name in FILES:
+        for name in self.files:
             rows = [r for r in _read_jsonl(self.dir / f"{name}.jsonl") if r.get("i", 0) <= last]
             if name == "steps":
                 rows = self.steps
             if name == "memory":
                 self.memory = rows
+            if name == LONGTERM_FILE:
+                self.longterm = rows
             (self.dir / f"{name}.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
 
     def has_start(self) -> bool:
@@ -124,14 +153,18 @@ class RunLogger:
     def read_config(self) -> dict:
         return yaml.safe_load((self.dir / "config.yaml").read_text())
 
-    def write_start(self, snapshot: dict, memory_limit: int = 0) -> None:
-        """Line 0 of world.jsonl and the empty memory line at i = 0."""
+    def write_start(self, snapshot: dict, memory_limit: int = 0, longterm: dict | None = None) -> None:
+        """Line 0 of world.jsonl and the empty memory line at i = 0, and with a long-term file its
+        starting version (the text the lineage handed over) as longterm.jsonl line 0."""
         self._write("world", snapshot)
         self._write("memory", {"i": 0, "t": 0, "ops": [], "accepted": True, "over_by": 0,
                                "text": "", "chars": 0, "limit": memory_limit})
+        if longterm is not None and LONGTERM_FILE in self._fh:
+            self._write(LONGTERM_FILE, {"i": 0, "t": 0, **longterm})
         self.flush()
 
-    def log_step(self, record: dict, deltas: list[dict], events: list[dict], memory: dict | None = None) -> None:
+    def log_step(self, record: dict, deltas: list[dict], events: list[dict], memory: dict | None = None,
+                 longterm: dict | None = None) -> None:
         i = record["i"]
         for d in deltas:
             self._write("world", {"type": d["type"], "t": d["t"], "i": i, **{k: v for k, v in d.items() if k not in ("type", "t")}})
@@ -139,6 +172,8 @@ class RunLogger:
             self._write("events", {"t": e["t"], "i": i, "type": e["type"], "detail": e.get("detail", {})})
         if memory is not None:
             self._write("memory", {"i": i, "t": record["t_start"], **memory})
+        if longterm is not None and LONGTERM_FILE in self._fh:
+            self._write(LONGTERM_FILE, {"i": i, "t": record["t_start"], **longterm})
         self._write("steps", record)         # last: this line marks the step complete
         self.flush()
 
@@ -155,8 +190,9 @@ class RunLogger:
 
 
 def run_loop(world: World, controller, logger: RunLogger, max_steps: int,
-             on_step: Callable[[dict], None] | None = None) -> None:
+             on_step: Callable[[dict], None] | None = None) -> bool:
     """Drive the world with the controller until max_steps world steps or the run ends.
+    Returns True if it was stopped early through the stop file.
 
     Each agent step:
       1. obs = world.observe()
@@ -173,18 +209,26 @@ def run_loop(world: World, controller, logger: RunLogger, max_steps: int,
     """
     on_result = getattr(controller, "on_result", None)
     replay = getattr(controller, "replay", None)
+    replay_lt = getattr(controller, "replay_longterm", None)
     if not logger.has_start():
-        logger.write_start(world.snapshot(), int(getattr(controller, "memory_limit", 0) or 0))
+        lt_start = getattr(controller, "longterm_start_record", None)
+        logger.write_start(world.snapshot(), int(getattr(controller, "memory_limit", 0) or 0),
+                           lt_start() if lt_start else None)
     mem_by_i = {m["i"]: m for m in logger.memory if m["i"] > 0}
+    lt_by_i = {m["i"]: m for m in logger.longterm if m["i"] > 0}
     for rec in logger.steps:
         if replay:
             replay(world.observe(), world, rec, mem_by_i.get(rec["i"]))
+        if replay_lt and rec["i"] in lt_by_i:
+            replay_lt(lt_by_i[rec["i"]])
         result = world.step(rec["action"])
         if on_result:
             on_result(result, world)
 
     i = logger.last_i
     while world.t < max_steps and not world.done:
+        if hold(logger.dir):
+            return True
         i += 1
         t_start = world.t
         obs = world.observe()
@@ -203,9 +247,10 @@ def run_loop(world: World, controller, logger: RunLogger, max_steps: int,
         for key in ("memory_chars_used", "memory_rejected", "input_tokens", "output_tokens", "latency_s", "cost_usd"):
             record[key] = extras.get(key, STEP_DEFAULTS[key])
         events = [{"t": t_start, **e} for e in extras.get("events", [])] + result.events
-        logger.log_step(record, result.deltas, events, extras.get("memory"))
+        logger.log_step(record, result.deltas, events, extras.get("memory"), extras.get("longterm"))
         if on_step:
             on_step(record)
+    return False
 
 
 def make_bot(name: str, seed: int):
@@ -235,7 +280,11 @@ def run(run_id: str, controller_name: str = "sensible_bot", seed: int = 1, max_s
     """
     run_dir = Path(runs_dir) / run_id
     resume = resume and (run_dir / "config.yaml").exists() and (run_dir / "steps.jsonl").exists()
-    logger = RunLogger(run_dir, resume=resume)
+    lineage = None
+    lt_extra: dict = {}
+    if not resume and int((extra_config or {}).get("longterm_chars") or 0) > 0:
+        lineage, lt_extra = _open_lineage(run_id, run_dir, extra_config or {})
+    logger = RunLogger(run_dir, resume=resume, longterm=lineage is not None)
     if resume:
         config = logger.read_config()
         world_cfg = WorldConfig.model_validate(config["world"])
@@ -248,28 +297,84 @@ def run(run_id: str, controller_name: str = "sensible_bot", seed: int = 1, max_s
                   "shuffle_recipes": world_cfg.shuffle_recipes, "on_death": world_cfg.on_death,
                   "max_steps": max_steps, "git_commit": git_commit()}
         config.update(extra_config or {})
+        config.update(lt_extra)
         if controller is None and controller_name == "llm":
             controller = make_llm(config, world_cfg)
         if hasattr(controller, "config_extras"):
             config.update(controller.config_extras())
         config["world"] = world_cfg.model_dump(mode="json")
         logger.write_config(config)
+    if resume and config.get("lineage"):
+        from tinyworld.agent.lineage import Lineage
+        lineage = Lineage(config["lineage"], config.get("lineages_dir"))
+        lineage.acquire(run_id, run_dir)
     world = World(world_cfg, seed=seed)
     if controller is None and controller_name == "llm":
         controller = make_llm(config, world_cfg)
     if controller is None:
         controller = make_bot(controller_name, seed)
     started = time.monotonic()
+    # Old control files would pause or stop this runner straight away.
+    for name in (PAUSE_FILE, STOP_FILE):
+        (run_dir / name).unlink(missing_ok=True)
+    (run_dir / PID_FILE).write_text(str(os.getpid()))
     try:
-        run_loop(world, controller, logger, max_steps, on_step)
+        stopped = run_loop(world, controller, logger, max_steps, on_step)
     finally:
         logger.close()
-    # The loop ended on its own (max_steps or end_run), so the run is complete: write the
-    # sixth file. A killed or interrupted run leaves no summary.json, which is how the sweep
-    # runner tells a finished run from one to resume.
+        (run_dir / PID_FILE).unlink(missing_ok=True)
+    if stopped:
+        return world
+    # The loop ended on its own (max_steps or end_run), so the run is complete. With a long-term
+    # file the agent gets one last call to edit it, logged as longterm.jsonl line i = last + 1.
+    finish = getattr(controller, "finish", None)
+    if lineage is not None and finish:
+        rec = finish(world)
+        if rec is not None:
+            steps = _read_jsonl(run_dir / "steps.jsonl")
+            last_i = steps[-1]["i"] if steps else 0
+            with open(run_dir / f"{LONGTERM_FILE}.jsonl", "a") as fh:
+                fh.write(json.dumps({"i": last_i + 1, "t": world.t, **rec}) + "\n")
+    # Then the sixth file. A killed, interrupted or stopped run leaves no summary.json, which is
+    # how the sweep runner tells a finished run from one to resume.
     from tinyworld.analysis.metrics import write_summary
     write_summary(run_dir, wall_clock_s=time.monotonic() - started)
+    if lineage is not None:
+        _commit_lineage(lineage, run_id, run_dir, controller)
     return world
+
+
+def _open_lineage(run_id: str, run_dir: Path, extra: dict) -> tuple:
+    """Take the lineage for a new run: check it is free, read its long-term file, and return the
+    config keys that record where the run started from."""
+    from tinyworld.agent.lineage import Lineage, LineageError
+    name = extra.get("lineage")
+    if not name:
+        raise LineageError("a long-term file needs a lineage name (--lineage NAME)")
+    lin = Lineage(name, extra.get("lineages_dir"))
+    start = lin.text()
+    limit = int(extra["longterm_chars"])
+    if len(start) > limit:
+        raise LineageError(f"lineage {name} has a {len(start)} character long-term file, over longterm_chars {limit}")
+    lin.acquire(run_id, run_dir)
+    return lin, {"lineage": name, "lineages_dir": str(lin.dir.parent), "generation": lin.next_generation,
+                 "longterm_start": start}
+
+
+def _commit_lineage(lineage, run_id: str, run_dir: Path, controller) -> None:
+    cfg = yaml.safe_load((run_dir / "config.yaml").read_text())
+    summary = {}
+    if (run_dir / "summary.json").exists():
+        summary = json.loads((run_dir / "summary.json").read_text())
+    keep = ("model", "seed", "world_steps", "agent_steps", "deaths", "items_crafted_distinct",
+            "deepest_tool_tier", "cost_usd_total")
+    extra = {k: summary.get(k, cfg.get(k)) for k in keep}
+    extra["longterm_chars"] = cfg.get("longterm_chars")
+    lt = _read_jsonl(run_dir / f"{LONGTERM_FILE}.jsonl")
+    extra["cost_usd_total"] = float(extra.get("cost_usd_total") or 0.0) + sum(
+        float(r.get("cost_usd") or 0.0) for r in lt if r.get("reflection"))
+    lineage.commit(run_id, run_dir, int(cfg.get("generation", lineage.next_generation)),
+                   cfg.get("longterm_start", "") or "", controller.longterm.text, extra)
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -290,6 +395,11 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--shuffle-recipes", action="store_true", default=None)
     ap.add_argument("--on-death", default=None)
     ap.add_argument("--resume", action="store_true")
+    ap.add_argument("--lineage", default=None,
+                    help="lineage name: the long-term file is read from and written back to lineages/NAME")
+    ap.add_argument("--longterm-chars", type=int, default=None,
+                    help="long-term file limit (needs --lineage), 0 or unset turns it off")
+    ap.add_argument("--lineages-dir", default=None, help="default lineages/ in the repo")
     ap.add_argument("--step-delay", type=float, default=0.0,
                     help="seconds to sleep after each agent step, so a bot run can be watched live in the viewer")
     args = ap.parse_args(argv)
@@ -297,7 +407,8 @@ def main(argv: list[str] | None = None) -> None:
     # Precedence: CLI flag, then the run config file, then these defaults.
     opts = {"controller": "sensible_bot", "model": None, "models_file": None, "memory_chars": 2000,
             "history_window": 3, "max_tokens": None, "seed": 1, "max_steps": 1500, "run_id": None,
-            "runs_dir": "runs", "names": None, "shuffle_recipes": None, "on_death": None}
+            "runs_dir": "runs", "names": None, "shuffle_recipes": None, "on_death": None,
+            "lineage": None, "longterm_chars": 0, "lineages_dir": None}
     file_opts: dict = {}
     if args.run_config:
         file_opts = yaml.safe_load(Path(args.run_config).read_text()) or {}
@@ -313,6 +424,11 @@ def main(argv: list[str] | None = None) -> None:
             ap.error("--controller llm needs --model NAME (an entry in configs/models.yaml)")
         extra = {"model": opts["model"], "models_file": opts["models_file"], "memory_chars": opts["memory_chars"],
                  "history_window": opts["history_window"], "max_tokens": opts["max_tokens"]}
+        if opts["longterm_chars"]:
+            if not opts["lineage"]:
+                ap.error("--longterm-chars needs --lineage NAME")
+            extra.update({"longterm_chars": opts["longterm_chars"], "lineage": opts["lineage"],
+                          "lineages_dir": opts["lineages_dir"]})
         default_id = f"llm_{opts['model']}_seed{opts['seed']}"
     else:
         default_id = f"{opts['controller']}_seed{opts['seed']}"

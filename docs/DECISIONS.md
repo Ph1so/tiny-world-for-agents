@@ -226,3 +226,63 @@ as-is.
     ends. `on_stuck: continue` only logs the event. A digging escape needs a pickaxe in stone,
     and placing a block in one's own cell is not allowed, so with empty hands in stone nothing can
     ever change.
+99. **Livelier nights, more ore, armor.** The haiku_live_night run showed six zombies that never
+    came near the agent: they spawned 12-24 cells away but only chased within 10, so they
+    wandered. Normal mode now: `zombie_chase_dist` 10->20 (covers most of the spawn ring),
+    `zombie_step_every` 2->1.5 (a zombie moves on 2 of every 3 steps; the field is now a float
+    and 2 still means every other step), `zombie_max` 6->9, `zombie_spawn_prob` 0.08->0.12. Ore:
+    `coal_rate` 0.03->0.05, `iron_rate` 0.02->0.035, `surface_coal`/`surface_iron` 8->14. Hard
+    mode takes the same chase range, spawn chance and ore numbers and keeps its own faster,
+    larger zombie pack. New items: wood sword (2 planks + 1 stick, damage 3, 20 uses), iron
+    helmet (3 iron ingot) and iron chestplate (5 iron ingot), all at a workbench. Armor works
+    from the inventory like swords: each piece held takes its points (helmet 1, chestplate 2)
+    off a zombie hit, at least 1 always gets through, and every piece held wears once per hit
+    (30 and 40 uses). Armor only stops zombie damage. The sensible bot's goals include the new
+    items, armor last, so it still makes all 16 things on seeds 1-20. Death notices now show the
+    cause through the display names, which closed a leak of "zombie" in alien mode that only
+    appeared once zombies reached the agent. Earlier samples keep their stored world config.
+100. **Long-term file and lineages.** A second memory file for what carries over between runs
+    (lessons about the game), next to the memory file for this world. Each run in a lineage
+    starts from the long-term file the previous one left. Choices: (a) off unless
+    `longterm_chars` > 0, and then the prompt only gains a paragraph that states the mechanics
+    ("carries over to your later runs, which may take place in a different world") with no
+    advice on what to keep; (b) the agent may edit it every step with a `"longterm"` field, plus
+    one reflection call when the run ends, because most runs end on max_steps with no chance to
+    sum up; (c) reproducibility: the run folder stores the starting text (config.yaml and
+    longterm.jsonl line 0), so a lineage run replays from its folder alone; (d) generations are
+    sequential, an unfinished run holds the lineage; (e) a stored text longer than the limit is
+    refused rather than truncated, since every edit to it would be rejected; (f) on a death in
+    `respawn_wipe_memory` mode only the memory file is wiped. The lineage `haiku_4nights` was
+    seeded by hand from runs/haiku_4nights (no long-term file in that run): its game rules,
+    recipes and lessons, including ones from earlier memory versions that the agent later
+    overwrote, every one checked against the game, without coordinates or plans.
+100. **Blocked moves name the blocker; "above" means above the head.** In the two Haiku runs, 47
+    of 54 failed sideways moves were stopped by the head cell alone: the model dug out the cell
+    at its feet, saw it empty, and could not tell why it still could not walk in. It also tried
+    to roof its shelter inside its own head because "open air above you" was checked from the
+    cell above the head. A blocked sideways move now ends with " Blocked by stone at (x,y,z)."
+    (the head cell for a level step; the feet cell plus whatever stops a step up; or "sheep #3"
+    when a creature stands there), also after a walk that stopped part way. The above line now
+    reads "open air above your head, from (x,y+2,z) up" or "stone above your head at (...)".
+    Both only report what is there, so the wording rule holds. The prompt is unchanged: the
+    agent still has to work out that it is two cells tall.
+101. **Inventory limit and chests.** The inventory has 10 slots (`inventory_slots`; 0 turns the
+    limit off). A slot holds one tool or armor piece, or up to 32 (`stack_size`) of anything
+    else. A pickup that does not fit fails whole and costs a step: mining leaves the block
+    standing, crafting uses nothing up ("No room in inventory."). Meat from a kill fills what
+    room there is and the rest is lost ("No room for 1 raw meat."). The observation shows
+    "inventory (7 of 10 slots): ...". A chest (8 planks at a workbench, hardness 4, no
+    pickaxe needed) holds 20 slots (`chest_slots`). Three actions were added: `store` and
+    `take` (a chest within reach, items with counts, all or nothing) and `drop` (items gone for
+    good). `drop` exists so a full inventory can never lock the agent out of food: placing
+    only empties placeable blocks, and sticks, coal or spare tools could otherwise pile up
+    with no way out. Tools and armor cannot be stored, because wear is tracked per held tool
+    and storing would let a worn one come back fresh. A chest that holds anything does not
+    break ("The chest is not empty."). Chests keep their contents through death, which is the
+    reason to build one near the start. Chests within reach list their contents in the
+    observation. world.jsonl carries a `chests` list in the snapshot and every step line.
+    The sensible bot now drops spare or outdone tools and junk past fixed keep amounts when
+    under two slots are free, drops a whole junk stack (never what the failed action used)
+    after a "No room", skips a goal it cannot reach instead of waiting on it, and cuts a
+    staircase out when it is stuck deep or hungry with no food in reach. It still makes all 17
+    things on seeds 1-20. It does not use chests.

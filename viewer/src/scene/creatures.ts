@@ -1,64 +1,10 @@
-// The agent and the creatures. Each kind is one merged, vertex coloured geometry. Creatures of a
-// kind share one InstancedMesh (one draw call per kind). Positions are interpolated between steps
-// by the caller; this file only knows how to build and pose them.
+// The creatures, plus the agent model from agent.ts. Each kind is one merged, vertex coloured
+// geometry. Creatures of a kind share one InstancedMesh (one draw call per kind). Positions are
+// interpolated between steps by the caller; this file only knows how to build and pose them.
 import * as THREE from "three";
-import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
-import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { AgentModel } from "./agent";
+import { Builder } from "./builder";
 import { CREATURE_COLORS as C } from "./palette";
-
-type Part = { geom: THREE.BufferGeometry };
-
-class Builder {
-  parts: Part[] = [];
-  private col = new THREE.Color();
-
-  /** A rounded box centred at (x, y, z). y is measured from the creature's feet. */
-  add(x: number, y: number, z: number, w: number, h: number, d: number, color: number, radius = 0.06, rounded = true): this {
-    const src = rounded
-      ? new RoundedBoxGeometry(w, h, d, 2, Math.min(radius, Math.min(w, h, d) / 2.2))
-      : new THREE.BoxGeometry(w, h, d);
-    // RoundedBoxGeometry is already non-indexed; calling toNonIndexed on it logs a warning.
-    const g = src.index ? src.toNonIndexed() : src;
-    if (g !== src) src.dispose();
-    g.deleteAttribute("uv");
-    const n = g.getAttribute("position").count;
-    const colors = new Float32Array(n * 3);
-    this.col.setHex(color);
-    for (let i = 0; i < n; i++) { colors[i * 3] = this.col.r; colors[i * 3 + 1] = this.col.g; colors[i * 3 + 2] = this.col.b; }
-    g.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-    g.translate(x, y, z);
-    this.parts.push({ geom: g });
-    return this;
-  }
-
-  build(): THREE.BufferGeometry {
-    const merged = mergeGeometries(this.parts.map((p) => p.geom), false);
-    for (const p of this.parts) p.geom.dispose();
-    merged.computeBoundingSphere();
-    return merged;
-  }
-}
-
-// Front is -z (north). Faces sit on the -z side of heads.
-export function agentGeometry(): THREE.BufferGeometry {
-  const b = new Builder();
-  b.add(-0.12, 0.2, 0, 0.18, 0.4, 0.2, C.agentPants, 0.04);
-  b.add(0.12, 0.2, 0, 0.18, 0.4, 0.2, C.agentPants, 0.04);
-  b.add(0, 0.65, 0, 0.5, 0.5, 0.3, C.agentShirt, 0.06);                 // body
-  b.add(-0.33, 0.66, 0, 0.14, 0.44, 0.16, C.agentShirt, 0.04);           // arms
-  b.add(0.33, 0.66, 0, 0.14, 0.44, 0.16, C.agentShirt, 0.04);
-  b.add(-0.33, 0.4, 0, 0.13, 0.1, 0.15, C.agentSkin, 0.03);              // hands
-  b.add(0.33, 0.4, 0, 0.13, 0.1, 0.15, C.agentSkin, 0.03);
-  b.add(0, 1.25, 0, 0.62, 0.6, 0.62, C.agentSkin, 0.08);                 // head
-  b.add(0, 1.52, 0.03, 0.66, 0.16, 0.66, C.agentHair, 0.05);             // hair
-  b.add(0, 1.34, -0.26, 0.66, 0.2, 0.14, C.agentHair, 0.04);             // fringe
-  b.add(-0.14, 1.26, -0.32, 0.1, 0.12, 0.04, C.eye, 0, false);           // eyes
-  b.add(0.14, 1.26, -0.32, 0.1, 0.12, 0.04, C.eye, 0, false);
-  b.add(0, 1.1, -0.32, 0.16, 0.05, 0.04, C.mouth, 0, false);             // mouth
-  b.add(-0.22, 1.16, -0.315, 0.1, 0.06, 0.03, 0xf4a8a0, 0, false);       // blush
-  b.add(0.22, 1.16, -0.315, 0.1, 0.06, 0.03, 0xf4a8a0, 0, false);
-  return b.build();
-}
 
 export function sheepGeometry(): THREE.BufferGeometry {
   const b = new Builder();
@@ -121,7 +67,8 @@ const MAX_INSTANCES = 64;
 
 export class Creatures {
   group = new THREE.Group();
-  agent: THREE.Mesh;
+  agentModel: AgentModel;
+  agent: THREE.Group;
   private meshes: Record<Kind, THREE.InstancedMesh>;
   private dummy = new THREE.Object3D();
   private material: THREE.MeshLambertMaterial;
@@ -129,9 +76,8 @@ export class Creatures {
 
   constructor() {
     this.material = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
-    this.agent = new THREE.Mesh(agentGeometry(), this.material);
-    this.agent.castShadow = true;
-    this.agent.name = "agent";
+    this.agentModel = new AgentModel(this.material);
+    this.agent = this.agentModel.group;
     this.group.add(this.agent);
     const make = (g: THREE.BufferGeometry, name: string) => {
       const m = new THREE.InstancedMesh(g, this.material, MAX_INSTANCES);
@@ -185,7 +131,7 @@ export class Creatures {
   }
 
   get drawCalls(): number {
-    let n = 1;
+    let n = this.agentModel.drawCalls;
     for (const k of KINDS) if (this.counts[k] > 0) n++;
     return n;
   }

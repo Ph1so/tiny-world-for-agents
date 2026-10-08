@@ -18,6 +18,7 @@ export const BLOCK_COLORS: Record<string, number> = {
   furnace: 0x8d8a99,
   torch: 0xffd56a,
   door: 0xbd7f45,
+  chest: 0xb07a3e,
 };
 
 /** Top faces of grass and leaves are a touch brighter, sides a touch different. */
@@ -26,6 +27,7 @@ export const TOP_TINT: Record<string, number> = {
   log: 0xcaa67c,
   "berry bush": 0xe493ab,
   workbench: 0xdfa86a,
+  chest: 0xc99556,
 };
 
 export const SIDE_TINT: Record<string, number> = {

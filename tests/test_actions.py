@@ -32,13 +32,35 @@ def test_move_climbs_one_block_and_stops_at_two(flat):
     flat.set_block(32, 12, 29, "stone")
     r = flat.step({"name": "move", "dir": "north", "steps": 5})
     assert flat.pos == [32, 10, 30]          # up onto the block, down again, then the wall
-    assert r.steps == 3 and r.text == "Moved 2 cells north."
+    assert r.steps == 3 and r.text == "Moved 2 cells north. Blocked by stone at (32,10,29) and stone at (32,11,29)."
 
 
 def test_move_blocked_costs_one_step(flat):
     flat.set_block(32, 11, 31, "stone")
     r = flat.step({"name": "move", "dir": "north", "steps": 4})
-    assert flat.pos == [32, 10, 32] and r.steps == 1 and r.text == T.NOT_MOVED and r.valid
+    assert flat.pos == [32, 10, 32] and r.steps == 1 and r.valid
+    assert r.text == "You did not move. Blocked by stone at (32,11,31)."     # the head cell
+
+
+def test_blocked_move_names_what_is_in_the_way(flat):
+    flat.set_block(32, 10, 31, "dirt")                         # feet cell: a step up, but the head can't clear it
+    flat.set_block(32, 12, 32, "stone")
+    r = flat.step({"name": "move", "dir": "north", "steps": 1})
+    assert r.text == "You did not move. Blocked by dirt at (32,10,31) and stone at (32,12,32)."
+    flat.set_block(32, 11, 31, "log")                          # a two-high wall
+    r = flat.step({"name": "move", "dir": "north", "steps": 1})
+    assert r.text == "You did not move. Blocked by dirt at (32,10,31) and log at (32,11,31)."
+    flat.set_block(32, 11, 33, "stone")                        # a walk stopped part way says it too
+    flat.set_block(32, 10, 31, "air")
+    flat.set_block(32, 11, 31, "air")
+    flat.set_block(32, 11, 30, "planks")
+    r = flat.step({"name": "move", "dir": "north", "steps": 4})
+    assert r.text == "Moved 1 cell north. Blocked by planks at (32,11,30)."
+    flat.pos = [10, 10, 10]                                    # far from the stone above
+    flat._spawn("sheep", (10, 10, 9))
+    flat.cfg.creatures.passive_move_prob = 0.0
+    r = flat.step({"name": "move", "dir": "north", "steps": 1})
+    assert r.text == "You did not move. Blocked by sheep #1."
 
 
 def test_move_bad_arguments(flat):
@@ -345,7 +367,7 @@ def test_zombies_come_at_night_far_away_and_leave_at_sunrise():
         w.health = 20
         r = w.step({"name": "wait", "steps": 1})
         first += [c for c in r.deltas[0]["creatures"] if c["id"] not in [f["id"] for f in first]]
-    assert len(w.creatures) == 6 and all(c["kind"] == "zombie" for c in w.creatures)
+    assert len(w.creatures) == w.cfg.creatures.zombie_max and all(c["kind"] == "zombie" for c in w.creatures)
     assert all(max(abs(c["pos"][0] - 32), abs(c["pos"][2] - 32)) >= 12 for c in first)
     while w.t < 300:
         w.health = w.food = 20
@@ -368,6 +390,7 @@ def test_no_zombies_near_a_torch():
 def test_zombie_chases_at_half_speed_and_hits():
     w = night_world()
     w.cfg.creatures.zombie_spawn_prob = 0.0
+    w.cfg.creatures.zombie_step_every = 2
     w._spawn("zombie", (32, 10, 26))
     w.cfg.vitals.heal_food_min = 99
     hits = []
@@ -377,6 +400,45 @@ def test_zombie_chases_at_half_speed_and_hits():
     assert w.creatures[0]["pos"] == [32, 10, 31]             # 5 cells, one every 2 steps
     assert hits and hits[0] == 208 and hits[1] - hits[0] == 2
     assert w.health == 20 - 3 * len(hits)
+
+
+def test_zombie_moves_on_two_of_every_three_steps():
+    w = night_world()
+    w.cfg.creatures.zombie_spawn_prob = 0.0
+    assert w.cfg.creatures.zombie_step_every == 1.5
+    w._spawn("zombie", (32, 10, 14))                          # 18 away: inside the chase range of 20
+    for _ in range(9):
+        w.step({"name": "wait", "steps": 1})
+    assert w.creatures[0]["pos"] == [32, 10, 20]              # 6 cells in 9 steps
+
+
+def test_armor_takes_off_zombie_damage_and_wears():
+    w = night_world()
+    w.cfg.creatures.zombie_spawn_prob = 0.0
+    w.cfg.vitals.heal_food_min = 99
+    give(w, iron_helmet=1, iron_chestplate=1)
+    w._spawn("zombie", (32, 10, 31))
+    hurt = []
+    for _ in range(6):
+        r = w.step({"name": "wait", "steps": 1})
+        hurt += [e["detail"]["amount"] for e in r.events if e["type"] == "hurt"]
+    assert hurt and set(hurt) == {1}                           # 3 - 1 - 2, never below 1
+    assert w.tools["iron helmet"] == w.cfg.durability["iron helmet"] - len(hurt)
+    assert w.tools["iron chestplate"] == w.cfg.durability["iron chestplate"] - len(hurt)
+    w._take("iron chestplate", 1)
+    hurt = []
+    for _ in range(6):
+        r = w.step({"name": "wait", "steps": 1})
+        hurt += [e["detail"]["amount"] for e in r.events if e["type"] == "hurt"]
+    assert hurt and set(hurt) == {2}
+
+
+def test_death_cause_uses_shown_names():
+    w = flat_world(names="alien")
+    w._cause = "zombie"
+    w.health = 0
+    w._die()
+    assert "zombie" not in w._death_notice and w.dn("zombie") in w._death_notice
 
 
 def test_zombie_does_not_get_through_walls_or_doors():
@@ -436,7 +498,7 @@ def test_move_up_out_of_water_says_why(flat):
     r = flat.step({"name": "move", "dir": "down", "steps": 2})
     assert r.text == T.NOT_MOVED_DRY
     flat.set_block(32, 11, 31, "stone")
-    assert flat.step({"name": "move", "dir": "north", "steps": 1}).text == T.NOT_MOVED
+    assert flat.step({"name": "move", "dir": "north", "steps": 1}).text.startswith(T.NOT_MOVED + " Blocked by")
 
 
 def test_move_up_blocked_in_water_is_plain_not_moved(flat):
@@ -511,3 +573,91 @@ def test_on_stuck_continue_only_logs_once():
     for _ in range(3):
         kinds += [e["type"] for e in w.step({"name": "wait", "steps": 1}).events]
     assert kinds.count("stuck") == 1 and not w.done
+
+
+# ---------------------------------------------------------------- inventory limit and chests
+
+def test_full_inventory_blocks_mining_and_crafting(flat):
+    assert flat.cfg.inventory_slots == 10 and flat.cfg.stack_size == 32
+    give(flat, wood_pickaxe=1, stone_sword=1, log=2, sticks=1, coal=1, berries=1, raw_meat=1, sand=1, stone=1,
+         dirt=32)
+    assert flat.slots(flat.inv) == 10
+    r = flat.step({"name": "mine", "x": 33, "y": 9, "z": 32})          # grass would need an 11th slot
+    assert r.text == T.NO_ROOM and r.valid and r.steps == 1 and flat.block(33, 9, 32) == "grass"
+    r = flat.step({"name": "mine", "x": 32, "y": 9, "z": 33})          # 33 dirt is two stacks
+    assert r.text == T.NO_ROOM
+    r = flat.step({"name": "craft", "items": {"log": 1}})              # planks need a new slot; one log stays
+    assert r.text == T.NO_ROOM and flat.inv["log"] == 2
+    flat.step({"name": "drop", "items": {"sand": 1}})
+    assert flat.step({"name": "craft", "items": {"log": 1}}).text == "Made 4 planks."
+
+
+def test_meat_that_does_not_fit_is_lost(flat):
+    give(flat, wood_pickaxe=1, stone_sword=1, log=1, sticks=1, coal=1, berries=1, sand=1, stone=1, dirt=1, raw_meat=31)
+    flat._spawn("sheep", (33, 10, 32))
+    flat.cfg.creatures.passive_move_prob = 0.0
+    texts = [flat.step({"name": "attack", "id": 1}).text for _ in range(2)]
+    assert texts[-1] == "Hit sheep #1. It is gone. Got 1 raw meat. No room for 1 raw meat."
+    assert flat.inv["raw meat"] == 32
+
+
+def test_drop(flat):
+    give(flat, dirt=5)
+    r = flat.step({"name": "drop", "items": {"dirt": 2}})
+    assert r.text == "Dropped dirt x2." and r.steps == 1 and flat.inv["dirt"] == 3
+    assert flat.step({"name": "drop", "items": {"dirt": 9}}).text == "Not enough dirt in inventory."
+    assert flat.step({"name": "drop", "items": {"log": 1}}).text == T.NO_ITEM
+    assert flat.step({"name": "drop", "items": {}}).text == T.BAD_ARGS
+
+
+def test_chest_store_take_and_observe(flat):
+    give(flat, chest=1, stone=10, coal=3, wood_pickaxe=1)
+    assert flat.step({"name": "place", "item": "chest", "x": 33, "y": 10, "z": 32}).valid
+    r = flat.step({"name": "store", "x": 33, "y": 10, "z": 32, "items": {"stone": 6, "coal": 3}})
+    assert r.text == "Stored stone x6, coal x3." and r.steps == 1
+    assert flat.inv == {"stone": 4, "wood pickaxe": 1} and flat.chests[(33, 10, 32)] == {"stone": 6, "coal": 3}
+    assert "  chest at (33,10,32) holds: stone x6, coal x3" in flat.observe()
+    assert flat.step({"name": "store", "x": 33, "y": 10, "z": 32, "items": {"wood pickaxe": 1}}).text == \
+        "The wood pickaxe was not stored."
+    assert flat.step({"name": "take", "x": 33, "y": 10, "z": 32, "items": {"coal": 4}}).text == \
+        "Not enough coal in the chest."
+    r = flat.step({"name": "take", "x": 33, "y": 10, "z": 32, "items": {"coal": 2}})
+    assert r.text == "Took coal x2." and flat.inv["coal"] == 2 and flat.chests[(33, 10, 32)] == {"stone": 6, "coal": 1}
+    assert flat.step({"name": "take", "x": 34, "y": 10, "z": 32, "items": {"coal": 1}}).text == "No chest at (34, 10, 32)."
+    assert flat.step({"name": "take", "x": 40, "y": 10, "z": 32, "items": {"coal": 1}}).text == T.TOO_FAR
+    assert flat.step({"name": "store", "x": 33, "y": 10, "z": 32, "items": "coal"}).text == T.BAD_ARGS
+
+
+def test_chest_full_and_mining(flat):
+    flat.cfg.chest_slots = 1
+    give(flat, chest=1, stone=40, wood_pickaxe=1)
+    flat.step({"name": "place", "item": "chest", "x": 33, "y": 10, "z": 32})
+    assert flat.step({"name": "store", "x": 33, "y": 10, "z": 32, "items": {"stone": 33}}).text == "No room in the chest."
+    assert flat.step({"name": "store", "x": 33, "y": 10, "z": 32, "items": {"stone": 32}}).valid
+    r = flat.step({"name": "mine", "x": 33, "y": 10, "z": 32})
+    assert r.text == "The chest is not empty." and flat.block(33, 10, 32) == "chest"
+    flat.step({"name": "take", "x": 33, "y": 10, "z": 32, "items": {"stone": 32}})
+    for _ in range(4):
+        r = flat.step({"name": "mine", "x": 33, "y": 10, "z": 32})
+        if r.text.startswith("Got"):
+            break
+    assert r.text == "Got 1 chest." and (33, 10, 32) not in flat.chests
+
+
+def test_chest_keeps_items_through_death_and_replays():
+    w = flat_world()
+    give(w, chest=1, stone=5)
+    w.step({"name": "place", "item": "chest", "x": 33, "y": 10, "z": 32})
+    w.step({"name": "store", "x": 33, "y": 10, "z": 32, "items": {"stone": 5}})
+    w._cause = "hunger"
+    w.health = 0
+    w._die()
+    assert w.inv == {} and w.chests[(33, 10, 32)] == {"stone": 5}
+    assert w.snapshot()["chests"] == [[33, 10, 32, {"stone": 5}]]
+
+
+def test_no_limit_when_slots_is_zero(flat):
+    flat.cfg.inventory_slots = 0
+    give(flat, dirt=500, wood_pickaxe=1, stone_sword=1, log=1, sticks=1, coal=1, berries=1, raw_meat=1, sand=1)
+    assert flat.step({"name": "mine", "x": 33, "y": 9, "z": 32}).text == "Got 1 grass."
+    assert flat.observe().split("\n")[3].startswith("inventory: ")

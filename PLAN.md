@@ -68,11 +68,11 @@ tests/
 
 ### Blocks
 
-grass, dirt, sand, stone, water, log, leaves, berry bush, coal ore, iron ore, planks, workbench, furnace, torch, door.
+grass, dirt, sand, stone, water, log, leaves, berry bush, coal ore, iron ore, planks, workbench, furnace, torch, door, chest.
 
 ### Items
 
-Every minable block as an item, plus sticks, coal, iron ingot, berries, raw meat, cooked meat, wood pickaxe, stone pickaxe, iron pickaxe, stone sword, iron sword.
+Every minable block as an item, plus sticks, coal, iron ingot, berries, raw meat, cooked meat, wood pickaxe, stone pickaxe, iron pickaxe, wood sword, stone sword, iron sword, iron helmet, iron chestplate.
 
 ### Recipes
 
@@ -85,14 +85,18 @@ The agent is never shown this table. It finds recipes by trying combinations.
 | 4 planks | workbench | |
 | 6 planks | door | workbench |
 | 3 planks + 2 sticks | wood pickaxe | workbench |
+| 2 planks + 1 stick | wood sword | workbench |
 | 3 stone + 2 sticks | stone pickaxe | workbench |
 | 2 stone + 1 stick | stone sword | workbench |
 | 8 stone | furnace | workbench |
+| 8 planks | chest | workbench |
 | 1 coal + 1 stick | 4 torches | |
 | 1 raw meat + 1 fuel | cooked meat | furnace |
 | 1 iron ore + 1 fuel | iron ingot | furnace |
 | 3 iron ingot + 2 sticks | iron pickaxe | workbench |
 | 2 iron ingot + 1 stick | iron sword | workbench |
+| 3 iron ingot | iron helmet | workbench |
+| 5 iron ingot | iron chestplate | workbench |
 
 Fuel is coal or planks. "Nearby" means within 2 cells.
 
@@ -164,6 +168,9 @@ The viewer always shows the normal look and can show both names.
 | `eat(item)` | Try to eat an inventory item. |
 | `attack(id)` | Hit a creature within 2 cells. |
 | `wait(steps)` | Do nothing for 1 to 8 steps. Stops early if hurt. |
+| `store(x, y, z, items)` | Put items from the inventory into a chest within reach. Tools stay out. |
+| `take(x, y, z, items)` | Take items from a chest within reach into the inventory. |
+| `drop(items)` | Throw items away for good. |
 
 Each action costs at least one step. Multi-step actions cost their real number of steps.
 

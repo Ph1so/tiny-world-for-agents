@@ -3,6 +3,7 @@ __pycache__/
 .venv/
 .env
 runs/
+lineages/
 node_modules/
 viewer/dist/
 .pytest_cache/

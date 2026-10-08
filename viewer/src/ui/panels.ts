@@ -24,11 +24,12 @@ export class StatusPanel {
   private clock = el("div", { class: "clock" });
   private bars = el("div", { class: "bars" });
   private inv = el("div", { class: "inventory" });
+  private chests = el("div", { class: "chests" });
   private barEls: Record<string, { fill: HTMLElement; label: HTMLElement }> = {};
   private lastInv = "";
 
   constructor() {
-    this.root.append(this.title, this.clock, this.bars, this.inv);
+    this.root.append(this.title, this.clock, this.bars, this.inv, this.chests);
     for (const [key, cls] of [["health", "health"], ["food", "food"], ["air", "air"]]) {
       const fill = el("div", { class: `fill ${cls}` });
       const label = el("span", { class: "bar-label" });
@@ -61,16 +62,31 @@ export class StatusPanel {
     }
     const rename = namer(run, opts);
     const items = Object.entries(a.inventory ?? {});
-    const sig = JSON.stringify(items) + JSON.stringify(a.tools ?? {}) + String(opts.alien);
+    const sig = JSON.stringify(items) + JSON.stringify(a.tools ?? {}) + JSON.stringify(s.chests ?? []) + String(opts.alien);
     if (sig === this.lastInv) return;
     this.lastInv = sig;
     clear(this.inv);
+    if (m.inventorySlots > 0) {
+      const used = slotsUsed(a.inventory ?? {}, m.stackSize);
+      this.inv.append(el("span", { class: `slots ${used >= m.inventorySlots ? "full" : ""}`, text: `${used}/${m.inventorySlots} slots` }));
+    }
     if (items.length === 0) this.inv.append(el("span", { class: "muted", text: "inventory empty" }));
     for (const [name, count] of items) {
       const uses = a.tools?.[name];
       const chip = el("span", { class: "chip" }, el("i", { class: "swatch", style: `background:${swatch(name)}` }),
         `${rename(name)}`, el("b", { text: ` x${count}` }), uses != null ? el("small", { text: ` ${uses} uses` }) : null);
       this.inv.append(chip);
+    }
+    clear(this.chests);
+    for (const [x, y, z, held] of s.chests ?? []) {
+      const row = el("div", { class: "chest-row" }, el("span", { class: "chest-at", text: `📦 ${rename("chest")} (${x},${y},${z})` }));
+      const contents = Object.entries(held);
+      if (contents.length === 0) row.append(el("span", { class: "muted", text: " empty" }));
+      for (const [name, count] of contents) {
+        row.append(el("span", { class: "chip small" }, el("i", { class: "swatch", style: `background:${swatch(name)}` }),
+          `${rename(name)}`, el("b", { text: ` x${count}` })));
+      }
+      this.chests.append(row);
     }
   }
 }
@@ -79,9 +95,18 @@ const SWATCHES: Record<string, string> = {
   grass: "#8dd27f", dirt: "#bf8f67", sand: "#f4e3ad", stone: "#b9bcc9", log: "#a97c55", leaves: "#6fc48d",
   "iron ore": "#e0a884", planks: "#e6bd85", workbench: "#cf9152", furnace: "#8d8a99", torch: "#ffd56a", door: "#bd7f45",
   sticks: "#c9a06e", coal: "#4f4b5c", "iron ingot": "#d8dce8", berries: "#d47f99", "raw meat": "#f0918f", "cooked meat": "#b86b4a",
-  "wood pickaxe": "#b9915f", "stone pickaxe": "#9ea2b3", "iron pickaxe": "#e4e7f2", "stone sword": "#9ea2b3", "iron sword": "#e4e7f2",
+  "wood pickaxe": "#b9915f", "stone pickaxe": "#9ea2b3", "iron pickaxe": "#e4e7f2", "wood sword": "#b9915f", "stone sword": "#9ea2b3", "iron sword": "#e4e7f2",
+  "iron helmet": "#e4e7f2", "iron chestplate": "#e4e7f2", chest: "#b07a3e",
 };
-function swatch(name: string): string { return SWATCHES[name] ?? "#ccc"; }
+export function swatch(name: string): string { return SWATCHES[name] ?? "#ccc"; }
+
+/** Everything that wears out takes a slot each; other items fill one slot per stack. */
+const ONE_PER_SLOT = /(pickaxe|sword|helmet|chestplate)$/;
+export function slotsUsed(items: Record<string, number>, stack: number): number {
+  let n = 0;
+  for (const [name, c] of Object.entries(items)) n += ONE_PER_SLOT.test(name) ? c : Math.ceil(c / stack);
+  return n;
+}
 
 export class AgentPanel {
   root = el("div", { class: "panel agent" });
@@ -122,6 +147,7 @@ export class AgentPanel {
   }
 }
 
+/** The memory file, or with kind "longterm" the long-term file of a lineage run. */
 export class MemoryPanel {
   root = el("div", { class: "panel memory" });
   private lastKey = "";
@@ -134,19 +160,28 @@ export class MemoryPanel {
   private ops = el("div", { class: "ops" });
   /** Called when the user asks to see the diff for a version (timeline click lands here too). */
 
-  constructor() {
+  constructor(private kind: "memory" | "longterm" = "memory") {
     this.usage.append(this.usageFill);
     this.root.append(this.head, el("div", { class: "usage-row" }, this.usage, this.usageLabel), this.editInfo, this.body, this.ops);
+    if (kind === "longterm") { this.root.classList.add("longterm"); this.root.style.display = "none"; }
   }
 
   update(run: RunData, t: number): void {
-    const i = run.agentStepIndexAt(t);
-    const k = run.memoryIndexAt(i);
-    const key = `${i}:${k}:${run.memory.length}`;
+    const lt = this.kind === "longterm";
+    const lines = lt ? run.longterm : run.memory;
+    if (lt) {
+      if (lines.length === 0) return;
+      this.root.style.display = "";
+      this.head.textContent = `long-term · ${run.meta.lineage || "lineage"} generation ${run.meta.generation || "?"}`;
+    }
+    // At the very end of a finished run, show the long-term file after the reflection too.
+    const i = lt && run.finished && t >= run.maxT ? Number.MAX_SAFE_INTEGER : run.agentStepIndexAt(t);
+    const k = run.memoryIndexAt(i, lines);
+    const key = `${i}:${k}:${lines.length}`;
     if (key === this.lastKey) return;
     this.lastKey = key;
-    const limit = k >= 0 ? run.memory[k].limit : run.meta.memoryChars;
-    const text = k >= 0 ? run.memory[k].text : "";
+    const limit = k >= 0 ? lines[k].limit : lt ? run.meta.longtermChars : run.meta.memoryChars;
+    const text = k >= 0 ? lines[k].text : "";
     const chars = text.length;
     const frac = limit > 0 ? chars / limit : 0;
     this.usageFill.style.width = `${Math.min(100, frac * 100)}%`;
@@ -154,16 +189,18 @@ export class MemoryPanel {
     this.usageLabel.textContent = limit > 0 ? `${chars} / ${limit} chars` : `${chars} chars (no memory)`;
     clear(this.body); clear(this.ops);
     if (k <= 0) {
-      this.editInfo.textContent = limit > 0 ? "no edits yet" : "this run has no memory file";
+      this.editInfo.textContent = lt ? (run.meta.generation > 1 ? "as handed on by the previous generation" : "first generation: starts empty")
+        : limit > 0 ? "no edits yet" : "this run has no memory file";
       this.editInfo.className = "edit-info muted";
       this.body.append(el("span", { class: "muted", text: text || "(empty)" }));
       return;
     }
-    const m = run.memory[k];
-    const before = run.memoryTextBefore(k);
-    const opNames = m.ops.map((o) => o.op).join(", ");
+    const m = lines[k];
+    const before = run.memoryTextBefore(k, lines);
+    const opNames = m.ops.map((o) => o.op).join(", ") || "no change";
     if (m.accepted) {
-      this.editInfo.textContent = `last edit at agent step ${m.i} (${opNames})${m.i === i ? "" : "  ·  unchanged since"}`;
+      this.editInfo.textContent = m.reflection ? `end of run reflection (${opNames})${m.thought ? `: “${m.thought}”` : ""}`
+        : `last edit at agent step ${m.i} (${opNames})${m.i === i ? "" : "  ·  unchanged since"}`;
       this.editInfo.className = "edit-info ok";
       const lines = lineDiff(before, m.text);
       if (!hasChanges(lines)) this.body.append(el("span", { class: "muted", text: m.text || "(empty)" }));
@@ -175,7 +212,7 @@ export class MemoryPanel {
         this.body.append(row);
       }
     } else {
-      this.editInfo.textContent = `edit at agent step ${m.i} rejected (${m.over_by} chars over). File unchanged.`;
+      this.editInfo.textContent = `${m.reflection ? "end of run reflection" : `edit at agent step ${m.i}`} rejected (${m.over_by} chars over). File unchanged.`;
       this.editInfo.className = "edit-info bad";
       for (const line of (m.text || "").split("\n")) this.body.append(el("div", { class: "dl same" }, el("span", { class: "gutter", text: " " }), el("span", { class: "ws same", text: line || " " })));
       this.ops.append(el("div", { class: "ops-head", text: "rejected ops" }));

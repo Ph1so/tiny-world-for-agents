@@ -30,7 +30,24 @@ Runs go to `runs/<run_id>/` (six files, see `docs/INTERFACES.md`). Add `--names 
 uv run python -m tinyworld.server --runs runs --runs samples --runs viewer/fixtures --port 8000
 ```
 
-Open `http://127.0.0.1:8000/` for the run picker, `/?run=<id>` to replay, `/?run=<id>&live=1` to follow a run in progress, `/compare?a=<id>&b=<id>` for two runs side by side. Keys: space, arrows, `e` next event, `m` next memory edit. More in `viewer/README.md`; screenshots in `docs/screenshots/`.
+Open `http://127.0.0.1:8000/` for the run picker (with a "new run" form, and resume for stopped runs), `/?run=<id>` to replay, `/?run=<id>&live=1` to follow a run in progress, `/compare?a=<id>&b=<id>` for two runs side by side. Keys: space, arrows, `e` next event, `m` next memory edit. While a run is going, the bar under the stage pauses, resumes or stops the run itself (not just playback); `--read-only` turns that off. More in `viewer/README.md`; screenshots in `docs/screenshots/`.
+
+## Long-term memory across runs (lineages)
+
+The memory file holds this world (places, plans) and starts empty every run. A long-term file
+holds what the agent learned about the game and carries over: each run in a lineage starts from
+the file the previous run left, edits it with a `"longterm"` field in its replies, and gets one
+last call at the end of the run to edit it before it is saved back to `lineages/<name>/`.
+
+```
+uv run python -m tinyworld.runner.run --controller llm --model haiku --lineage haiku_a --longterm-chars 800 --max-steps 300
+uv run python -m tinyworld.runner.lineage --lineage haiku_a --model haiku --generations 5     # back to back, seed+1 each
+uv run python -m tinyworld.analysis.lineage_report haiku_a [--text]                          # generation by generation
+```
+
+The viewer shows the long-term file above the memory panel, and the new run form takes a
+lineage. A lineage only runs one generation at a time; an unfinished one holds it until it is
+resumed to the end. Off by default, so other runs and their prompts are unchanged.
 
 ## Sweeps and report
 

@@ -2,8 +2,7 @@
 // each file in increasing step order. Everything the scene and panels read comes from here.
 import type {
   AgentState, Creature, EventLine, FileName, MemoryLine, SnapshotLine, StepLine, WorldLine,
-  WorldStepLine,
-} from "./types";
+  WorldStepLine, ChestEntry } from "./types";
 
 export interface WorldState {
   t: number;
@@ -12,6 +11,7 @@ export interface WorldState {
   creatures: Creature[];
   light: string;
   day: number;
+  chests?: ChestEntry[];
 }
 
 export interface RunMeta {
@@ -23,6 +23,13 @@ export interface RunMeta {
   controller: string;
   model: string | null;
   memoryChars: number;
+  /** Inventory slots (0 = no limit) and stack size, from the world config. */
+  inventorySlots: number;
+  stackSize: number;
+  /** Long-term file (lineage runs): limit, lineage name, generation. 0 / "" when off. */
+  longtermChars: number;
+  lineage: string;
+  generation: number;
   viewRadius: number;
 }
 
@@ -42,6 +49,7 @@ export class RunData {
   steps: StepLine[] = [];
   stepByI: Map<number, StepLine> = new Map();
   memory: MemoryLine[] = [];
+  longterm: MemoryLine[] = [];
   events: EventLine[] = [];
   /** Bumped on every ingested line, so consumers can poll cheaply. */
   version = 0;
@@ -54,7 +62,8 @@ export class RunData {
 
   constructor(runId: string) {
     this.meta = { runId, dayLength: 300, nightStart: 200, dimSteps: 20, names: "familiar",
-      controller: "", model: null, memoryChars: 0, viewRadius: 12 };
+      controller: "", model: null, memoryChars: 0, viewRadius: 12,
+      longtermChars: 0, lineage: "", generation: 0, inventorySlots: 0, stackSize: 32 };
   }
 
   // ------------------------------------------------------------------ ingest
@@ -76,6 +85,11 @@ export class RunData {
     const model = str("model", "null");
     this.meta.model = model === "null" ? null : model.replace(/^['"]|['"]$/g, "");
     this.meta.memoryChars = num("memory_chars", 0);
+    this.meta.longtermChars = num("longterm_chars", 0);
+    this.meta.inventorySlots = num("inventory_slots", 0);
+    this.meta.stackSize = num("stack_size", 32) || 32;
+    this.meta.lineage = str("lineage", "");
+    this.meta.generation = num("generation", 0);
     this.meta.viewRadius = num("view_radius", 12);
     this.version++;
   }
@@ -85,6 +99,7 @@ export class RunData {
       case "world": await this.ingestWorld(line as unknown as WorldLine); break;
       case "steps": this.ingestStep(line as unknown as StepLine); break;
       case "memory": this.ingestMemory(line as unknown as MemoryLine); break;
+      case "longterm": this.longterm.push(line as unknown as MemoryLine); break;
       case "events": this.ingestEvent(line as unknown as EventLine); break;
     }
     this.version++;
@@ -143,7 +158,7 @@ export class RunData {
     if (t <= 0) {
       if (!this.state0) {
         const s = this.snapshot;
-        this.state0 = { t: 0, i: 0, agent: s.agent, creatures: s.creatures, light: s.light, day: s.day };
+        this.state0 = { t: 0, i: 0, agent: s.agent, creatures: s.creatures, light: s.light, day: s.day, chests: s.chests };
       }
       return this.state0;
     }
@@ -167,11 +182,11 @@ export class RunData {
   }
 
   /** Index into this.memory of the version in force after agent step i (-1 if none). */
-  memoryIndexAt(i: number): number {
-    let lo = 0, hi = this.memory.length - 1, ans = -1;
+  memoryIndexAt(i: number, lines: MemoryLine[] = this.memory): number {
+    let lo = 0, hi = lines.length - 1, ans = -1;
     while (lo <= hi) {
       const mid = (lo + hi) >> 1;
-      if (this.memory[mid].i <= i) { ans = mid; lo = mid + 1; } else hi = mid - 1;
+      if (lines[mid].i <= i) { ans = mid; lo = mid + 1; } else hi = mid - 1;
     }
     return ans;
   }
@@ -183,8 +198,8 @@ export class RunData {
   }
 
   /** Text before memory line k (the last accepted version earlier than it). */
-  memoryTextBefore(k: number): string {
-    for (let j = k - 1; j >= 0; j--) if (this.memory[j].accepted) return this.memory[j].text;
+  memoryTextBefore(k: number, lines: MemoryLine[] = this.memory): string {
+    for (let j = k - 1; j >= 0; j--) if (lines[j].accepted) return lines[j].text;
     return "";
   }
 

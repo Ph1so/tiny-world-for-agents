@@ -21,6 +21,8 @@ scalars (death_causes, life_steps). Key groups:
                memory_rejected, memory_chars_changed_per_step, memory_chars_changed_per_edit,
                memory_lines_created, memory_lines_alive_end, memory_line_survival_mean (died lines),
                memory_line_survival_mean_censored (alive lines count until the last step)
+    longterm   (lineage runs only) lineage, generation, longterm_chars_start/end, longterm_edits,
+               longterm_rejected, reflection_changed, reflection_cost_usd
     cost       input_tokens_total, output_tokens_total, tokens_total, cost_usd_total,
                latency_total_s, latency_mean_s, wall_clock_s
 """
@@ -34,10 +36,11 @@ import sys
 from collections import Counter, deque
 from pathlib import Path
 
-from tinyworld.analysis.replay import Grid, RunFiles, replay_grid
+from tinyworld.analysis.replay import Grid, RunFiles, read_jsonl, replay_grid
 
-ACTIONS = ["move", "mine", "place", "craft", "eat", "attack", "wait"]
-TOOL_TIER = {"wood pickaxe": 1, "stone pickaxe": 2, "stone sword": 2, "iron pickaxe": 3, "iron sword": 3}
+ACTIONS = ["move", "mine", "place", "craft", "eat", "attack", "wait", "store", "take", "drop"]
+TOOL_TIER = {"wood pickaxe": 1, "wood sword": 1, "stone pickaxe": 2, "stone sword": 2, "iron pickaxe": 3, "iron sword": 3,
+             "iron helmet": 3, "iron chestplate": 3}
 DEATH_CAUSES = ["hunger", "drowning", "fall", "zombie"]
 ENTROPY_WINDOW = 50
 NEIGHBOURS_6 = [(1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1)]
@@ -303,6 +306,27 @@ def line_survival(versions: list[tuple[int, str]], last_i: int) -> dict:
     }
 
 
+def longterm_metrics(run: RunFiles) -> dict:
+    """The long-term file of a lineage run. Empty for runs without one."""
+    lt = read_jsonl(run.dir / "longterm.jsonl")
+    if not lt:
+        return {}
+    edits = [m for m in lt if m["i"] > 0 and not m.get("reflection")]
+    refl = next((m for m in lt if m.get("reflection")), None)
+    before_refl = [m for m in lt if not m.get("reflection") and m.get("accepted", True)]
+    cfg = run.config
+    return {
+        "lineage": cfg.get("lineage"), "generation": cfg.get("generation"),
+        "longterm_chars_start": lt[0]["chars"],
+        "longterm_chars_end": next((m["chars"] for m in reversed(lt) if m.get("accepted", True)), lt[0]["chars"]),
+        "longterm_edits": sum(1 for m in edits if m.get("accepted", True)),
+        "longterm_rejected": sum(1 for m in lt if m["i"] > 0 and not m.get("accepted", True)),
+        "reflection_changed": bool(refl and refl.get("accepted", True) and before_refl
+                                   and refl["text"] != before_refl[-1]["text"]),
+        "reflection_cost_usd": float(refl.get("cost_usd") or 0.0) if refl else 0.0,
+    }
+
+
 def memory_metrics(run: RunFiles) -> dict:
     steps, mem = run.steps, run.memory
     used = [s.get("memory_chars_used", 0) for s in steps]
@@ -386,6 +410,7 @@ def compute_metrics(run_dir: str | Path, wall_clock_s: float | None = None) -> d
     out.update(world_metrics(run))
     out.update(stuck_metrics(run))
     out.update(memory_metrics(run))
+    out.update(longterm_metrics(run))
     out.update(cost_metrics(run, wall_clock_s))
     return {k: _round(v) for k, v in out.items()}
 

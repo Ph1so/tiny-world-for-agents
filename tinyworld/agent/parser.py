@@ -21,6 +21,7 @@ class Parsed:
     ok: bool
     thought: str = ""
     memory_ops: list = field(default_factory=list)
+    longterm_ops: list = field(default_factory=list)
     action: dict = field(default_factory=lambda: dict(WAIT_ONE))
     error: str | None = None
 
@@ -82,7 +83,7 @@ def _objects(s: str):
         start = s.find("{", start + 1)
 
 
-ACTION_NAMES = {"move", "mine", "place", "craft", "eat", "attack", "wait"}
+ACTION_NAMES = {"move", "mine", "place", "craft", "eat", "attack", "wait", "store", "take", "drop"}
 ACTION_ARGS = {"dir", "steps", "x", "y", "z", "item", "items", "id"}
 
 
@@ -140,7 +141,7 @@ def _salvage_tool_call_style(text: str, bare_action: dict | None = None) -> dict
         if key not in params:
             params[key] = _coerce_value(raw)
 
-    fields: dict = {k: params[k] for k in ("thought", "memory") if k in params}
+    fields: dict = {k: params[k] for k in ("thought", "memory", "longterm") if k in params}
     action = params.get("action")
     if not isinstance(action, dict):
         # a param whose value is itself an action object, under any key (e.g. <parameter="mine">{...})
@@ -164,7 +165,7 @@ def _salvage_tool_call_style(text: str, bare_action: dict | None = None) -> dict
             got = False
             for obj in _objects(cand):
                 obj = _clean_keys(obj)
-                for k in ("thought", "memory"):
+                for k in ("thought", "memory", "longterm"):
                     if k in obj and k not in fields:
                         fields[k] = obj[k]
                 if not isinstance(action, dict):
@@ -195,4 +196,29 @@ def parse_reply(text: str) -> Parsed:
     if not isinstance(thought, str):
         thought = json.dumps(thought)
     ops = normalize_memory(obj.get("memory", []))
-    return Parsed(True, thought=thought, memory_ops=ops, action=action)
+    return Parsed(True, thought=thought, memory_ops=ops, longterm_ops=normalize_memory(obj.get("longterm", [])),
+                  action=action)
+
+
+def parse_reflection(text: str) -> Parsed:
+    """The end of run reply: {"thought": "...", "longterm": [...]}. No action is needed. ok is
+    False only when no JSON object can be found at all."""
+    if not isinstance(text, str) or not text.strip():
+        return Parsed(False, error="empty reply")
+    obj = None
+    for cand in _candidates(text):
+        for o in _objects(cand):
+            o = _clean_keys(o)
+            if "longterm" in o:
+                obj = o
+                break
+            if obj is None:
+                obj = o
+        if obj is not None and "longterm" in obj:
+            break
+    if obj is None:
+        return Parsed(False, error="no JSON object")
+    thought = obj.get("thought", "")
+    if not isinstance(thought, str):
+        thought = json.dumps(thought)
+    return Parsed(True, thought=thought, longterm_ops=normalize_memory(obj.get("longterm", [])))

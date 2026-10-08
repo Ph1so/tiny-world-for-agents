@@ -55,6 +55,10 @@ select { font: inherit; border: 1px solid var(--line); border-radius: 999px; pad
 .stage canvas.world { width: 100%; height: 100%; display: block; }
 .overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(244, 241, 250, 0.8); font-size: 15px; color: var(--muted); }
 .overlay.error { color: var(--bad); }
+.action-chip { position: absolute; left: 12px; top: 12px; max-width: calc(100% - 24px); padding: 6px 14px; border-radius: 16px; background: rgba(255, 255, 255, 0.92); color: #3b2f52; font-size: 14px; font-weight: 600; box-shadow: 0 2px 10px rgba(60, 40, 100, 0.15); pointer-events: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.action-chip .bar { display: none; height: 4px; margin-top: 5px; border-radius: 2px; background: rgba(59, 47, 82, 0.12); overflow: hidden; }
+.action-chip.has-bar .bar { display: block; }
+.action-chip .bar .fill { height: 100%; width: 0; background: #7c9cf0; }
 .debug { position: absolute; left: 10px; bottom: 8px; display: none; font: 11px var(--mono); color: #fff; background: rgba(40, 30, 60, 0.6); padding: 2px 6px; border-radius: 6px; }
 
 .side { width: 380px; flex: 0 0 380px; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; padding-bottom: 4px; }
@@ -127,3 +131,29 @@ select { font: inherit; border: 1px solid var(--line); border-radius: 999px; pad
 .runs { border-collapse: collapse; width: 100%; background: #fff; border-radius: var(--radius); overflow: hidden; box-shadow: 0 2px 10px rgba(80, 60, 120, 0.07); }
 .runs th, .runs td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); }
 .runs th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); }
+
+/* Run control: state label and buttons in the transport bar, new run form on the picker. */
+.run-control .run-state { font-size: 12px; font-weight: 600; color: var(--muted); padding: 0 4px; }
+.run-control .run-state[data-state="running"] { color: var(--good); }
+.run-control .run-state[data-state="paused"], .run-control .run-state[data-state="stopping"] { color: #c98a1a; }
+.state-badge { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 10px; margin-right: 6px; background: #eeeaf6; color: var(--muted); }
+.state-badge[data-state="running"] { background: #dcf3e3; color: #23874a; }
+.state-badge[data-state="paused"], .state-badge[data-state="stopping"] { background: #fbefd5; color: #a86d0c; }
+.state-badge[data-state="stopped"] { background: #f9e0e0; color: #b04444; }
+.new-run-box { background: #fff; border-radius: var(--radius); padding: 10px 16px; margin: 18px 0; box-shadow: 0 2px 10px rgba(80, 60, 120, 0.07); }
+.new-run-box summary { cursor: pointer; font-weight: 700; padding: 4px 0; }
+.new-run .fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px 16px; margin: 12px 0; }
+.new-run .field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.new-run .field input, .new-run .field select { font: inherit; font-size: 14px; font-weight: 400; color: var(--ink, #2b2340); padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: #fff; min-width: 0; }
+.new-run .field small { font-weight: 400; }
+.new-run .form-row { display: flex; align-items: center; gap: 12px; }
+.new-run button.wide { width: auto; padding: 0 18px; }
+.form-msg { margin: 0; font-size: 13px; white-space: pre-wrap; }
+
+/* Inventory slots and chests in the status panel. */
+.inventory .slots { font-size: 11px; font-weight: 700; color: var(--muted); margin-right: 4px; align-self: center; }
+.inventory .slots.full { color: var(--bad); }
+.chests { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
+.chest-row { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; font-size: 12px; }
+.chest-row .chest-at { font-weight: 600; color: var(--muted); margin-right: 2px; }
+.chip.small { font-size: 11px; padding: 1px 6px; }

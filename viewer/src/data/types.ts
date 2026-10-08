@@ -2,6 +2,9 @@
 
 export type Vec3 = [number, number, number];
 
+/** A chest and what it holds: [x, y, z, {item: count}]. Lines without chests leave the key out. */
+export type ChestEntry = [number, number, number, Record<string, number>];
+
 export interface AgentState {
   pos: Vec3;
   health: number;
@@ -30,6 +33,7 @@ export interface SnapshotLine {
   day: number;
   display_names: Record<string, string>;
   spawn: Vec3;
+  chests?: ChestEntry[];
 }
 
 export interface WorldStepLine {
@@ -41,6 +45,7 @@ export interface WorldStepLine {
   creatures: Creature[];
   light: string;
   day: number;
+  chests?: ChestEntry[];
 }
 
 export type WorldLine = SnapshotLine | WorldStepLine;
@@ -82,6 +87,9 @@ export interface MemoryLine {
   text: string;
   chars: number;
   limit: number;
+  /** longterm.jsonl only: the end of run reflection line (i = last agent step + 1). */
+  reflection?: boolean;
+  thought?: string;
 }
 
 export interface EventLine {
@@ -91,7 +99,7 @@ export interface EventLine {
   detail: Record<string, unknown>;
 }
 
-export type FileName = "world" | "steps" | "memory" | "events";
+export type FileName = "world" | "steps" | "memory" | "events" | "longterm";
 
 export interface StreamMessage {
   file: FileName | "status";

@@ -90,6 +90,8 @@ Every later line is one world step.
 
 `i` is the agent step this world step belongs to. Agent steps are numbered from 1. `i` 0 means the state before the first agent step (the snapshot, and the empty memory line).
 
+`chests` (snapshot and every step line) is the full list of chests and what they hold: `[[x,y,z,{"stone":6}], ...]`, sorted by cell. Chests keep their contents when the agent dies.
+
 `blocks` lists only cells that changed this step. `creatures` is the full list each step. `inventory` maps item name to count. Tools appear as `"stone pickaxe": 1` and their wear is in `agent.tools`: `{"stone pickaxe": 41}` (uses left, for the one in use). `agent.tools` is in every step line and in the snapshot.
 
 Block, item, and creature names in world.jsonl are always familiar names.
@@ -121,6 +123,26 @@ One line per agent step where the agent sent at least one memory op, plus one li
 ```
 
 When `accepted` is false, `text` is the unchanged file and `over_by` is how many characters over.
+
+### longterm.jsonl (lineage runs only)
+Same line format as memory.jsonl, for the long-term file. Line `i` 0 holds the text the run
+started from (what the previous generation left in `lineages/<name>/longterm.md`, so it is not
+empty from generation 2 on). The last line, at `i` = last agent step + 1, is the end of run
+reflection, with extra keys `reflection: true`, `parse_ok`, `thought`, `raw_reply`,
+`input_tokens`, `output_tokens`, `cost_usd`. Runs without a long-term file have no such file.
+
+config.yaml of a lineage run adds `longterm_chars`, `lineage`, `lineages_dir`, `generation`, and
+`longterm_start` (the starting text). The reply format gains an optional `"longterm": [...]` with
+the same ops as `"memory"`; `longterm_rejected` events mirror `memory_rejected`. summary.json
+adds `lineage`, `generation`, `longterm_chars_start/end`, `longterm_edits`, `longterm_rejected`,
+`reflection_changed`, `reflection_cost_usd`.
+
+### Lineages `lineages/<name>/`
+`longterm.md` is the current long-term file. `history.jsonl` has one line per finished
+generation: `{generation, run_id, run_dir, finished_at, start_chars, end_chars, changed, model,
+seed, world_steps, agent_steps, deaths, items_crafted_distinct, deepest_tool_tier,
+cost_usd_total, longterm_chars}`, plus `source` for a line that was written by hand.
+`lock.json` names the unfinished run that holds the lineage.
 
 ### events.jsonl
 
@@ -157,8 +179,27 @@ Optional members of the controller.
 
 `python -m tinyworld.server --runs runs --port 8000`
 
-- `GET /api/runs` gives a list of `{run_id, controller, model, memory_chars, seed, world_steps, finished}`.
+- `GET /api/runs` gives a list of `{run_id, controller, model, memory_chars, seed, max_steps, world_steps, finished, state}`. `state` is `finished`, `running`, `paused`, `stopping` or `stopped` (not finished and no runner alive, so `--resume` continues it).
 - `GET /api/runs/{run_id}/{file}` serves any of the files above.
 - `WS /ws/runs/{run_id}` sends every existing line of world, steps, memory, and events as `{"file":"world","line":{...}}`, then keeps sending new lines as they are written.
 
 The viewer needs nothing else. Live mode and replay mode read the same lines.
+
+### Run control
+
+Unless the server is started with `--read-only`, the viewer can also start, pause, resume and stop
+runs. Every POST needs the header `X-Tinyworld: 1`, and a browser `Origin` must match the `Host`,
+so another web page cannot start runs on your API key.
+
+- `GET /api/options`: `{controls, models: [{name, provider, model, input_per_m, output_per_m}], worlds: ["world", "world_hard", ...]}`.
+- `POST /api/runs` with `{controller, model, memory_chars, max_steps, seed, world, run_id, step_delay}` launches the runner as a subprocess in the first `--runs` directory (output in `runner.log` in the run folder) and answers once it is up, or with the end of its log if it failed.
+- `POST /api/runs/{run_id}/pause`, `/resume`, `/stop`. Resume unpauses a paused run, or launches `--resume` on a stopped one.
+
+Pause and stop work through files in the run folder, which the runner checks before each agent
+step, so they also work on a run started from a shell (`touch runs/ID/pause`):
+
+| File | Meaning |
+|---|---|
+| `pause` | wait before the next agent step until the file is removed |
+| `stop` | end after the current step without writing `summary.json` (resumable); the runner removes it |
+| `runner.pid` | written while a runner works on the folder, removed when it exits |

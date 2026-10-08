@@ -107,7 +107,11 @@ def render(world) -> str:
             inv.append(fmt.format(name=name, c=n, n=world.tools[item]))
         else:
             inv.append(T.OBS_COUNT.format(name=name, c=n))
-    out.append(T.OBS_INVENTORY.format(items=", ".join(inv) if inv else T.OBS_EMPTY))
+    items = ", ".join(inv) if inv else T.OBS_EMPTY
+    if world.cfg.inventory_slots > 0:
+        out.append(T.OBS_INVENTORY_SLOTS.format(used=world.slots(world.inv), limit=world.cfg.inventory_slots, items=items))
+    else:
+        out.append(T.OBS_INVENTORY.format(items=items))
     if world.last_action is not None:
         out.append(T.OBS_LAST.format(action=world.last_action, result=world.last_result))
     if world._death_notice:
@@ -135,9 +139,13 @@ def render(world) -> str:
             out.append(T.OBS_MANY.format(name=name, n=len(sel), coords=_coords(sel[:4])))
     above = next(((yy, int(bb)) for yy, bb in enumerate(world.blocks[y + 2:, z, x], start=y + 2) if bb != AIR), None)
     if above is None:
-        out.append(T.OBS_OPEN_ABOVE)
+        out.append(T.OBS_OPEN_ABOVE.format(x=x, y=y + 2, z=z))
     else:
         out.append(T.OBS_BLOCK_ABOVE.format(name=world.dn(BLOCKS[above[1]]), x=x, y=above[0], z=z))
+    for (cx, cy, cz), held in sorted(world.chests.items()):          # contents of chests within reach
+        if max(abs(cx - x), abs(cy - y), abs(cz - z)) <= c.reach:
+            out.append(T.OBS_CHEST.format(chest=world.dn("chest"), x=cx, y=cy, z=cz,
+                                          items=world._items_text(held) if held else T.OBS_EMPTY))
 
     out.append(T.OBS_VIEW.format(r=c.view_radius))
     n_far = 0

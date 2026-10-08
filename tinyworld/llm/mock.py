@@ -20,6 +20,7 @@ from typing import Callable
 from .base import LLMClient, Reply
 
 _MEM_LINE = re.compile(r"memory file \((\d+) of (\d+) characters used\)")
+_LT_LINE = re.compile(r"long-term file \((\d+) of (\d+) characters used\)")
 
 
 class MockClient(LLMClient):
@@ -74,12 +75,17 @@ class SensibleMockClient(MockClient):
         self.n += 1
         if self.world is None:
             raise RuntimeError("SensibleMockClient needs world set before complete()")
-        if self.garble_every and self.n % self.garble_every == 0:
+        if "The run is over." in user:                        # end of run reflection
+            text = json.dumps({"thought": "mock reflection", "longterm": self._longterm_ops(user, final=True)})
+        elif self.garble_every and self.n % self.garble_every == 0:
             text = "I will look around first. {not json"
         else:
             action = self.bot.act(self.world.observe(), self.world)
-            text = json.dumps({"thought": f"mock step {self.n}", "memory": self._memory_ops(user, action),
-                               "action": action})
+            reply = {"thought": f"mock step {self.n}", "memory": self._memory_ops(user, action)}
+            if _LT_LINE.search(user):
+                reply["longterm"] = self._longterm_ops(user)
+            reply["action"] = action
+            text = json.dumps(reply)
         return Reply(text=text, input_tokens=(len(system) + len(user)) // 4, output_tokens=max(1, len(text) // 4),
                      latency_s=0.0)
 
@@ -96,6 +102,23 @@ class SensibleMockClient(MockClient):
         if self.note_every and self.n % self.note_every == 0:
             line = f"step {w.t} at {tuple(w.pos)} did {action.get('name')}"
             if used + len(line) + 1 > limit:
-                return [{"op": "replace", "old": user.split("\n")[1] if "\n" in user else "", "new": line}]
+                lines = user[m.end():].split("\n")
+                return [{"op": "replace", "old": lines[1] if len(lines) > 1 else "", "new": line}]
             return [{"op": "append", "text": line}]
         return []
+
+    def _longterm_ops(self, user: str, final: bool = False) -> list[dict]:
+        """A lesson line now and then, and a run summary at the end, kept within the limit."""
+        m = _LT_LINE.search(user)
+        if not m:
+            return []
+        used, limit = int(m.group(1)), int(m.group(2))
+        if final:
+            line = f"run ended at step {self.world.t} with {len(self.world.firsts['craft'])} things crafted"
+        elif self.n % 23 == 0:
+            line = f"lesson from step {self.world.t}"
+        else:
+            return []
+        if used + len(line) + 1 > limit:
+            return [{"op": "rewrite", "text": line[:limit]}]
+        return [{"op": "append", "text": line}]

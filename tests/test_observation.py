@@ -43,13 +43,13 @@ def test_layout(flat):
         "step 3 | day 1 | light bright",
         "position (32, 10, 32)",
         "health 20/20 | food 20/20 | air 10/10",
-        "inventory: stone pickaxe (59 uses left), planks x6, stone x1",
+        "inventory (3 of 10 slots): stone pickaxe (59 uses left), planks x6, stone x1",
         "last action: mine (34, 10, 32). Result: Got 1 stone.",
         "",
     ]
     assert lines[6] == "close (within 3 cells):"
     assert lines[7].startswith("  grass: 49 seen, nearest (32,9,32) ")
-    assert lines[8] == "  open air above you"
+    assert lines[8] == "  open air above your head, from (32,12,32) up"
     assert lines[9] == "in view (within 12 cells):"
     assert lines[10].startswith("  grass: ") and lines[10].endswith(" seen, nearest (28,9,32)")
     assert lines[11:] == ["creatures:", "  sheep #1 at (28,10,35)"]
@@ -83,7 +83,7 @@ def test_enclosed_agent_sees_only_the_walls():
     w.set_block(36, 10, 32, "log")
     obs = w.observe()
     assert "planks: 9 seen" in obs and "log" not in obs
-    assert "planks above you at (32,12,32)" in obs and "open air" not in obs
+    assert "planks above your head at (32,12,32)" in obs and "open air" not in obs
     assert obs.split("in view (within 12 cells):\n")[1].startswith("  nothing")
 
 
@@ -110,7 +110,7 @@ def test_templates_have_no_banned_words():
 
 def test_bot_run_text_has_no_banned_words_and_stays_short(familiar_run):
     w, obs, results = familiar_run
-    assert len(w.firsts["craft"]) == 13
+    assert len(w.firsts["craft"]) == 17
     for text in obs + results:
         assert not any(b in text.lower() for b in BANNED), text
     # About 600 tokens. Coordinates cost about one token per 2.5 characters.
@@ -138,7 +138,7 @@ def test_alien_names_are_made_up_and_seeded():
 
 def test_no_familiar_name_in_alien_observations(alien_run):
     w, obs, results = alien_run
-    assert w.deaths == 0 and len(w.firsts["craft"]) == 13      # the run saw every item
+    assert w.deaths == 0 and len(w.firsts["craft"]) == 17      # the run saw every item
     # "air" stays: it is the name of a vital, and air is never listed as a block.
     words = sorted({x for n in defs.ALL_NAMES for x in n.split()})
     pat = re.compile(r"\b(" + "|".join(words) + r")\b", re.I)

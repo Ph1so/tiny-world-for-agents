@@ -23,6 +23,20 @@ MEMORY_PARAGRAPH = ("\nYour memory file holds at most {N} characters. You may ed
 REPLY_WITH_MEMORY = '{"thought": "...", "memory": [...], "action": {...}}'
 REPLY_NO_MEMORY = '{"thought": "...", "action": {...}}'
 
+# Long-term file (lineages). Only used when longterm_chars > 0; with it off the prompt is the
+# PLAN.md section 7 text unchanged.
+LONGTERM_PARAGRAPH = ("\nYour long-term file holds at most {L} characters. It carries over to your later runs, "
+                      "which may take place in a different world.{memory_note} You may edit it every step with "
+                      "the \"longterm\" field{edit_like}. An edit that would go over its limit is "
+                      "rejected and the file stays as it was.\n")
+LONGTERM_MEMORY_NOTE = " Your memory file starts empty in every run."
+REPLY_LONGTERM_MEMORY = '{"thought": "...", "memory": [...], "longterm": [...], "action": {...}}'
+REPLY_LONGTERM_ONLY = '{"thought": "...", "longterm": [...], "action": {...}}'
+LONGTERM_LINE = "long-term file ({used} of {limit} characters used)"
+REFLECTION = ("The run is over. This is the last edit of your long-term file before your next run.\n"
+              "Reply with one JSON object and nothing else:\n"
+              '{"thought": "...", "longterm": [...]}')
+
 MEMORY_LINE = "memory file ({used} of {limit} characters used)"
 HISTORY_HEADER = "last {k} actions:"
 HISTORY_NONE = "none yet"
@@ -37,6 +51,7 @@ def action_lines(world) -> str:
     dirs = " | ".join(f'"{d}"' for d in DIRS)
     ex_craft = json.dumps({world.dn("dirt"): 2, world.dn("sand"): 1})      # a shape example, not a recipe
     ex_place = json.dumps(world.dn("dirt"))
+    chest = world.dn("chest")
     lines = [
         f'move: {{"name": "move", "dir": {dirs}, "steps": 1 to 8}}',
         f'mine: {{"name": "mine", "x": X, "y": Y, "z": Z}}  a cell within {c.reach} cells',
@@ -45,11 +60,23 @@ def action_lines(world) -> str:
         f'eat: {{"name": "eat", "item": {ex_place}}}  an item from the inventory',
         f'attack: {{"name": "attack", "id": ID}}  a creature within {c.attack_reach} cells',
         'wait: {"name": "wait", "steps": 1 to 8}',
+        f'store: {{"name": "store", "x": X, "y": Y, "z": Z, "items": {ex_craft}}}  items from the inventory into a {chest} within {c.reach} cells',
+        f'take: {{"name": "take", "x": X, "y": Y, "z": Z, "items": {ex_craft}}}  items from a {chest} within {c.reach} cells into the inventory',
+        f'drop: {{"name": "drop", "items": {ex_craft}}}  items from the inventory, gone for good',
     ]
     return "\n".join(lines)
 
 
-def build_system_prompt(world, history_window: int, memory_chars: int) -> str:
+def build_system_prompt(world, history_window: int, memory_chars: int, longterm_chars: int = 0) -> str:
+    if longterm_chars > 0:
+        mem = memory_chars > 0
+        clause = ("your memory file, " if mem else "") + "your long-term file, "
+        paragraph = (MEMORY_PARAGRAPH.format(N=memory_chars) if mem else "") + LONGTERM_PARAGRAPH.format(
+            L=longterm_chars, memory_note=LONGTERM_MEMORY_NOTE if mem else "",
+            edit_like=", the same way as the memory file" if mem else "")
+        return SYSTEM_TEMPLATE.format(memory_clause=clause, K=history_window, memory_paragraph=paragraph,
+                                      action_lines=action_lines(world),
+                                      reply_line=REPLY_LONGTERM_MEMORY if mem else REPLY_LONGTERM_ONLY)
     if memory_chars > 0:
         return SYSTEM_TEMPLATE.format(memory_clause="your memory file, ", K=history_window,
                                       memory_paragraph=MEMORY_PARAGRAPH.format(N=memory_chars),
@@ -59,9 +86,15 @@ def build_system_prompt(world, history_window: int, memory_chars: int) -> str:
 
 
 def build_user_message(memory_text: str | None, memory_limit: int, history: list[tuple[str, str]],
-                       history_window: int, observation: str) -> str:
-    """memory_text None means memory is off (size 0) and the memory block is left out."""
+                       history_window: int, observation: str, longterm_text: str | None = None,
+                       longterm_limit: int = 0) -> str:
+    """memory_text None means memory is off (size 0) and the memory block is left out. The
+    long-term block comes first when longterm_text is not None."""
     parts: list[str] = []
+    if longterm_text is not None:
+        parts.append(LONGTERM_LINE.format(used=len(longterm_text), limit=longterm_limit))
+        parts.append(longterm_text)
+        parts.append("")
     if memory_text is not None:
         parts.append(MEMORY_LINE.format(used=len(memory_text), limit=memory_limit))
         parts.append(memory_text)

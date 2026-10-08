@@ -70,6 +70,7 @@ class World:
         self.pos: list[int] = list(self.spawn)
         self.inv: dict[str, int] = {}
         self.tools: dict[str, int] = {}                  # tool name -> uses left on the one in use
+        self.chests: dict[Pos, dict[str, int]] = {}      # chest cell -> items in it; kept through death
         self._reset_vitals()
         self.creatures: list[dict] = []
         self._next_id = 1
@@ -200,6 +201,21 @@ class World:
             self.inv.pop(item, None)
             self.tools.pop(item, None)
 
+    def slots(self, items: dict[str, int]) -> int:
+        """Slots these items fill: one per tool, one per stack_size of anything else."""
+        return sum(n if i in defs.TOOLS else math.ceil(n / self.cfg.stack_size) for i, n in items.items())
+
+    def _fits(self, add: dict[str, int], take: dict[str, int] | None = None) -> bool:
+        """Whether the inventory would stay within its slots after taking and adding these."""
+        if self.cfg.inventory_slots <= 0:
+            return True
+        after = dict(self.inv)
+        for i, n in (take or {}).items():
+            after[i] = after.get(i, 0) - n
+        for i, n in add.items():
+            after[i] = after.get(i, 0) + n
+        return self.slots({i: n for i, n in after.items() if n > 0}) <= self.cfg.inventory_slots
+
     def pick_tier(self) -> int:
         return max([t for p, t in defs.PICKAXES.items() if self.inv.get(p, 0) > 0], default=0)
 
@@ -303,7 +319,8 @@ class World:
             c["pos"][1] = y
             d = None
             if c["kind"] == "zombie":
-                if self.t % cc.zombie_step_every:
+                e = cc.zombie_step_every
+                if int(self.t / e) == int((self.t - 1) / e):
                     continue
                 if cheb(c["pos"], self.pos) <= cc.zombie_chase_dist:
                     ddx, ddz = ax - x, az - z
@@ -357,9 +374,17 @@ class World:
                 beside = abs(x - ax) + abs(z - az) == 1 and y in (ay, ay + 1)
                 above = (x, z) == (ax, az) and y == ay + 2
                 if beside or above:
-                    self._damage(cc.zombie_damage, "zombie")
+                    self._damage(self._armored(cc.zombie_damage), "zombie")
                     self._last_hit = self.t
                     break
+
+    def _armored(self, n: int) -> int:
+        """Zombie damage after armor. Each piece held takes off its points (at least 1 gets
+        through) and wears once per hit."""
+        worn = [a for a in defs.ARMOR if self.inv.get(a, 0) > 0]
+        for a in worn:
+            self._wear(a)
+        return max(1, n - sum(self.cfg.armor[a] for a in worn))
 
     def _zombie_break(self, c: dict, order: list[str]) -> None:
         """A chasing zombie blocked by a breakable block grinds it down, then removes it.
@@ -526,12 +551,12 @@ class World:
         self._event("death", {"cause": cause, "pos": list(self.pos)})
         if self.cfg.on_death == "end_run":
             self.done = True
-            self._death_notice = T.DIED_END.format(cause=cause)
+            self._death_notice = T.DIED_END.format(cause=self.dn(cause))
             return
         self.pos = list(self._respawn_cell())
         self.inv, self.tools = {}, {}
         self._reset_vitals()
-        self._death_notice = T.DIED_RESPAWN.format(cause=cause)
+        self._death_notice = T.DIED_RESPAWN.format(cause=self.dn(cause))
         self._event("respawn", {"pos": list(self.pos)})
 
     def _respawn_cell(self) -> Pos:
@@ -613,7 +638,8 @@ class World:
         t0 = self.t
         name = action.get("name") if isinstance(action, dict) else None
         handler = {"move": self._move, "mine": self._mine, "place": self._place, "craft": self._craft,
-                   "eat": self._eat, "attack": self._attack, "wait": self._wait}.get(name if isinstance(name, str) else "")
+                   "eat": self._eat, "attack": self._attack, "wait": self._wait,
+                   "store": self._store, "take": self._take_from, "drop": self._drop}.get(name if isinstance(name, str) else "")
         if handler is None:
             text, valid, desc = T.UNKNOWN_ACTION, False, _clean(name) or "none"
         else:
@@ -633,10 +659,11 @@ class World:
         if d not in DIRS or n is None or not 1 <= n <= 8:
             return T.BAD_ARGS, False, desc
         seen = {c["id"] for c in self.visible_creatures()}
-        moved = 0
+        moved, blocked = 0, ""
         for _ in range(n):
             before = list(self.pos)
-            self._move_once(d)
+            if not self._move_once(d) and d not in ("up", "down"):
+                blocked = self._blockers(d)                   # read before the tick moves creatures
             self._tick()
             ok = self.pos != before
             moved += ok
@@ -650,8 +677,33 @@ class World:
             x, y, z = self.pos
             if d in ("up", "down") and self.bid(x, y, z) != WATER and not (d == "down" and self.bid(x, y - 1, z) == WATER):
                 return T.NOT_MOVED_DRY, True, desc
-            return T.NOT_MOVED, True, desc
-        return T.MOVED.format(n=moved, cells="cell" if moved == 1 else "cells", dir=d), True, desc
+            return T.NOT_MOVED + blocked, True, desc
+        return T.MOVED.format(n=moved, cells="cell" if moved == 1 else "cells", dir=d) + blocked, True, desc
+
+    def _blockers(self, d: str) -> str:
+        """What stopped a sideways step, as " Blocked by ..." text, or "" at the world's edge.
+
+        A level step needs the two cells ahead (feet and head) free. If the feet cell is solid,
+        a step up needs the two cells above it and the cell above the head free instead.
+        """
+        x, y, z = self.pos
+        dx, _, dz = DIRS[d]
+        nx, nz = x + dx, z + dz
+        if not (0 <= nx < self.sx and 0 <= nz < self.sz):
+            return ""
+        if AGENT_PASS[self.bid(nx, y, nz)]:
+            cells = [(nx, y + 1, nz)]
+        else:
+            cells = [(nx, y, nz), (nx, y + 1, nz), (nx, y + 2, nz), (x, y + 2, z)]
+            if not AGENT_PASS[self.bid(nx, y + 1, nz)]:
+                cells = cells[:2]                             # both cells ahead are solid: a wall
+        things = [T.BLOCKED_CELL.format(name=self.dn(self.block(*p)), x=p[0], y=p[1], z=p[2])
+                  for p in cells if self.inb(*p) and not AGENT_PASS[self.bid(*p)]]
+        if not things:                                        # the cells are free: a creature is in the way
+            tgt = self.step_target(self.pos, d)
+            things = [T.BLOCKED_CREATURE.format(kind=self.dn(c["kind"]), id=c["id"]) for c in self.creatures
+                      if tgt and c["pos"][0] == tgt[0] and c["pos"][2] == tgt[2] and c["pos"][1] in (tgt[1], tgt[1] + 1)]
+        return T.BLOCKED_BY.format(things=" and ".join(things)) if things else ""
 
     def _xyz(self, a: dict) -> Pos | None:
         p = tuple(_int(a.get(k)) for k in "xyz")
@@ -671,6 +723,14 @@ class World:
         if n is None or not self.exposed(*p):
             self._tick()
             return T.NOT_BROKEN, True, desc
+        if self.chests.get(tuple(p)):
+            self._tick()
+            return T.CHEST_NOT_EMPTY.format(chest=self.dn("chest")), True, desc
+        item = defs.DROPS.get(block, block)
+        count = self.cfg.berries_per_bush if block == "berry bush" else 1
+        if not self._fits({item: count}):
+            self._tick()
+            return T.NO_ROOM, True, desc
         for k in range(n):
             if k == n - 1:
                 break
@@ -678,8 +738,7 @@ class World:
             if self._stop():
                 return T.NOT_BROKEN, True, desc
         self.set_block(*p, "air")
-        item = defs.DROPS.get(block, block)
-        count = self.cfg.berries_per_bush if block == "berry bush" else 1
+        self.chests.pop(tuple(p), None)
         self._add(item, count)
         if block == "berry bush":
             self.regrow.append([self.t + 1 + self.cfg.bush_regrow, *p])
@@ -706,6 +765,8 @@ class World:
         if self.bid(*p) not in (AIR, WATER) or self._agent_in(*p) or self._occupied(*p):
             return T.NOT_EMPTY, False, desc
         self.set_block(*p, item)
+        if item == "chest":
+            self.chests[tuple(p)] = {}
         self._take(item, 1)
         self._first("place", item, "block")
         self._tick()
@@ -733,6 +794,9 @@ class World:
             self._event("craft_fail", {"items": items})
             self._tick()
             return T.NOT_MADE, True, desc
+        if not self._fits({r.output: r.count}, items):
+            self._tick()
+            return T.NO_ROOM, True, desc
         for item, n in items.items():
             self._take(item, n)
         self._add(r.output, r.count)
@@ -772,13 +836,112 @@ class World:
             self._event("kill", {"kind": c["kind"], "id": cid})
             text = T.HIT_GONE.format(kind=kind, id=cid)
             meat = self.cfg.creatures.meat[c["kind"]]
-            if meat:
-                self._add("raw meat", meat)
-                text += " " + T.GOT.format(n=meat, item=self.dn("raw meat"))
+            got = next((m for m in range(meat, 0, -1) if self._fits({"raw meat": m})), 0)
+            if got:
+                self._add("raw meat", got)
+                text += " " + T.GOT.format(n=got, item=self.dn("raw meat"))
+            if got < meat:
+                text += T.NO_ROOM_FOR.format(n=meat - got, item=self.dn("raw meat"))
         if sword and self._wear(sword):
             text += T.TOOL_BROKE.format(tool=self.dn(sword))
         self._tick()
         return text, True, desc
+
+    def _items_arg(self, raw) -> dict[str, int] | None:
+        """{shown name: count} to {familiar name: count}. None if malformed or a name is unknown."""
+        if not isinstance(raw, dict) or not raw:
+            return None
+        items: dict[str, int] = {}
+        for k, v in raw.items():
+            n, item = _int(v), self.internal(k)
+            if n is None or n < 1 or item is None:
+                return None
+            items[item] = items.get(item, 0) + n
+        return items
+
+    def _items_text(self, items: dict[str, int]) -> str:
+        return ", ".join(T.OBS_COUNT.format(name=self.dn(i), c=n) for i, n in items.items())
+
+    def _have(self, items: dict[str, int]) -> str | None:
+        """Error text if the inventory lacks any of these, else None."""
+        for item, n in items.items():
+            if self.inv.get(item, 0) < 1:
+                return T.NO_ITEM
+            if self.inv[item] < n:
+                return T.NOT_ENOUGH.format(item=self.dn(item))
+        return None
+
+    def _chest_arg(self, a: dict, verb: str):
+        """(cell, items, desc, error). error is (text, valid) when the action cannot go ahead."""
+        p, items = self._xyz(a), self._items_arg(a.get("items"))
+        if p is None or items is None:
+            return None, None, verb, (T.BAD_ARGS, False)
+        desc = f"{verb} ({p[0]}, {p[1]}, {p[2]}) " + self._items_text(items)
+        if not self.inb(*p) or cheb(p, self.pos) > self.cfg.reach:
+            return p, items, desc, (T.TOO_FAR, False)
+        if self.bid(*p) != defs.CHEST:
+            return p, items, desc, (T.NO_CHEST.format(chest=self.dn("chest"), x=p[0], y=p[1], z=p[2]), False)
+        return p, items, desc, None
+
+    def _store(self, a: dict):
+        p, items, desc, err = self._chest_arg(a, "store")
+        if err is None:
+            missing = self._have(items)
+            err = (missing, False) if missing else None
+        if err:
+            return err[0], err[1], desc
+        tool = next((i for i in items if i in defs.TOOLS), None)
+        chest = self.chests.setdefault(tuple(p), {})
+        # Keep the chest's order, new kinds after (a set here would order by string hash, which
+        # changes from process to process and breaks determinism).
+        after = dict(chest)
+        for i, n in items.items():
+            after[i] = after.get(i, 0) + n
+        if tool:
+            text = T.NOT_STORED.format(item=self.dn(tool))
+        elif self.slots(after) > self.cfg.chest_slots:
+            text = T.CHEST_FULL.format(chest=self.dn("chest"))
+        else:
+            for i, n in items.items():
+                self._take(i, n)
+            chest.clear()
+            chest.update(after)
+            text = T.STORED.format(items=self._items_text(items))
+        self._tick()
+        return text, True, desc
+
+    def _take_from(self, a: dict):
+        p, items, desc, err = self._chest_arg(a, "take")
+        if err:
+            return err[0], err[1], desc
+        chest = self.chests.setdefault(tuple(p), {})
+        short = next((i for i, n in items.items() if chest.get(i, 0) < n), None)
+        if short:
+            text = T.NOT_IN_CHEST.format(item=self.dn(short), chest=self.dn("chest"))
+        elif not self._fits(items):
+            text = T.NO_ROOM
+        else:
+            for i, n in items.items():
+                chest[i] -= n
+                if chest[i] == 0:
+                    del chest[i]
+                self._add(i, n)
+            text = T.TOOK.format(items=self._items_text(items))
+        self._tick()
+        return text, True, desc
+
+    def _drop(self, a: dict):
+        items = self._items_arg(a.get("items"))
+        if items is None:
+            return T.BAD_ARGS, False, "drop"
+        desc = "drop " + self._items_text(items)
+        missing = self._have(items)
+        if missing:
+            return missing, False, desc
+        for i, n in items.items():
+            self._take(i, n)
+        self._tick()
+        return T.DROPPED.format(items=self._items_text(items)), True, desc
 
     def _wait(self, a: dict):
         n = _int(a.get("steps", 1))
@@ -816,13 +979,16 @@ class World:
         blocks = [[x, y, z, name] for (x, y, z), name in self._changed.items()]
         self._changed = {}
         return {"type": "step", "t": self.t, "blocks": blocks, "agent": self._agent_dict(),
-                "creatures": self._creature_list(), "light": self.light(), "day": self.day}
+                "creatures": self._creature_list(), "chests": self._chest_list(), "light": self.light(), "day": self.day}
+
+    def _chest_list(self) -> list[list]:
+        return [[x, y, z, dict(items)] for (x, y, z), items in sorted(self.chests.items())]
 
     def snapshot(self) -> dict:
         return {"type": "snapshot", "t": self.t, "size": [self.sx, self.sy, self.sz],
                 "sea_level": self.cfg.sea_level, "palette": list(BLOCKS),
                 "blocks_b64": base64.b64encode(zlib.compress(self.blocks.tobytes())).decode("ascii"),
-                "agent": self._agent_dict(), "creatures": self._creature_list(),
+                "agent": self._agent_dict(), "creatures": self._creature_list(), "chests": self._chest_list(),
                 "light": self.light(), "day": self.day, "display_names": dict(self.display),
                 "spawn": list(self.spawn)}
 
@@ -830,7 +996,7 @@ class World:
         state = {
             "t": self.t, "done": self.done, "stuck": self.stuck, "deaths": self.deaths, "agent": self._agent_dict(),
             "ticks": [self._food_tick, self._starve_tick, self._heal_tick, self._last_hit],
-            "creatures": self.creatures, "next_id": self._next_id, "regrow": self.regrow,
+            "creatures": self.creatures, "chests": self._chest_list(), "next_id": self._next_id, "regrow": self.regrow,
             "firsts": self.firsts, "last": [self.last_action, self.last_result],
             "notice": [self._notice, self._death_notice], "rng": self.rng.bit_generator.state,
         }

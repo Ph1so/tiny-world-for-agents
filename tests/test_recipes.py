@@ -17,11 +17,11 @@ for r in BASE:
 
 
 def test_table_matches_the_plan():
-    assert len(BASE) == 13 and len(CASES) == 15
+    assert len(BASE) == 17 and len(CASES) == 19
     assert {r.output: r.count for r in BASE} == {
         "planks": 4, "sticks": 4, "workbench": 1, "door": 1, "wood pickaxe": 1, "stone pickaxe": 1,
         "stone sword": 1, "furnace": 1, "torch": 4, "cooked meat": 1, "iron ingot": 1,
-        "iron pickaxe": 1, "iron sword": 1}
+        "iron pickaxe": 1, "iron sword": 1, "wood sword": 1, "iron helmet": 1, "iron chestplate": 1, "chest": 1}
     assert all(r.output in defs.ITEMS for r in BASE)
 
 

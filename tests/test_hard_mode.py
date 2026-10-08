@@ -47,7 +47,7 @@ def test_defaults_keep_the_old_behaviour():
     cfg = load_world_config()
     assert cfg.view_radius == 12
     assert cfg.vitals.food_drain_every == 15
-    assert cfg.creatures.zombie_step_every == 2
+    assert cfg.creatures.zombie_step_every == 1.5
     assert cfg.creatures.zombie_damage == 3
     assert cfg.creatures.torch_radius == 6
     assert cfg.creatures.zombie_breaks == []                    # off: zombies cannot break blocks

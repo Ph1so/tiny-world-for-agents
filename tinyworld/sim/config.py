@@ -63,7 +63,7 @@ class Creatures(_M):
     zombie_spawn_min_dist: int = 12
     zombie_spawn_max_dist: int = 24
     zombie_chase_dist: int = 10
-    zombie_step_every: int = 2            # world steps per zombie move (1 matches the agent's speed)
+    zombie_step_every: float = 2          # world steps per zombie move (1 matches the agent's speed, 1.5 is 2 of every 3)
     zombie_damage: int = 3
     zombie_cooldown: int = 2
     zombie_breaks: list[str] = []         # block names a blocked zombie can break (empty = none)
@@ -82,6 +82,9 @@ class WorldConfig(_M):
     night_start: int = 200
     dim_steps: int = 20
     torch_light: int = 6
+    inventory_slots: int = 0           # 0 = no limit. A slot holds one tool or up to stack_size of an item
+    stack_size: int = 32
+    chest_slots: int = 20
     reach: int = 3
     attack_reach: int = 2
     station_reach: int = 2
@@ -95,7 +98,8 @@ class WorldConfig(_M):
     tool_speed: list[float] = [1, 2, 3, 4]              # hand, wood, stone, iron pickaxe
     durability: dict[str, int] = {}
     hand_damage: int = 2
-    sword_damage: dict[str, int] = {"stone sword": 4, "iron sword": 6}
+    sword_damage: dict[str, int] = {"wood sword": 3, "stone sword": 4, "iron sword": 6}
+    armor: dict[str, int] = {"iron helmet": 1, "iron chestplate": 2}   # zombie damage taken off per piece held
     terrain: Terrain = Terrain()
     creatures: Creatures = Creatures()
 

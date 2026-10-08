@@ -3,10 +3,10 @@ from __future__ import annotations
 
 BLOCKS: list[str] = [
     "air", "grass", "dirt", "sand", "stone", "water", "log", "leaves", "berry bush",
-    "coal ore", "iron ore", "planks", "workbench", "furnace", "torch", "door",
+    "coal ore", "iron ore", "planks", "workbench", "furnace", "torch", "door", "chest",
 ]
 ID: dict[str, int] = {n: i for i, n in enumerate(BLOCKS)}
-AIR, WATER, TORCH, DOOR = ID["air"], ID["water"], ID["torch"], ID["door"]
+AIR, WATER, TORCH, DOOR, CHEST = ID["air"], ID["water"], ID["torch"], ID["door"], ID["chest"]
 
 # Per block id lookup tables (plain lists, fast to index).
 AGENT_PASS: list[bool] = [n in ("air", "water", "torch", "door") for n in BLOCKS]   # agent can occupy
@@ -21,11 +21,12 @@ DROPS: dict[str, str] = {"coal ore": "coal", "berry bush": "berries"}
 
 PLACEABLE: list[str] = [
     "grass", "dirt", "sand", "stone", "log", "leaves", "iron ore", "planks",
-    "workbench", "furnace", "torch", "door",
+    "workbench", "furnace", "torch", "door", "chest",
 ]
 PICKAXES: dict[str, int] = {"wood pickaxe": 1, "stone pickaxe": 2, "iron pickaxe": 3}   # name -> tier
-SWORDS: list[str] = ["stone sword", "iron sword"]
-TOOLS: list[str] = list(PICKAXES) + SWORDS
+SWORDS: list[str] = ["wood sword", "stone sword", "iron sword"]
+ARMOR: list[str] = ["iron helmet", "iron chestplate"]          # worn from the inventory, no action needed
+TOOLS: list[str] = list(PICKAXES) + SWORDS + ARMOR            # everything that wears out
 ITEMS: list[str] = PLACEABLE + [
     "sticks", "coal", "iron ingot", "berries", "raw meat", "cooked meat",
 ] + TOOLS

@@ -36,6 +36,15 @@ export function fmtAction(action: Record<string, unknown> & { name: string }, re
     case "eat": return `eat ${rename(String(a.item))}`;
     case "attack": return `attack #${a.id}`;
     case "wait": return `wait ${a.steps}`;
+    case "store":
+    case "take": {
+      const items = (a.items ?? {}) as Record<string, number>;
+      return `${a.name} ${Object.entries(items).map(([k, v]) => `${rename(k)} x${v}`).join(" + ")} at (${a.x}, ${a.y}, ${a.z})`;
+    }
+    case "drop": {
+      const items = (a.items ?? {}) as Record<string, number>;
+      return `drop ${Object.entries(items).map(([k, v]) => `${rename(k)} x${v}`).join(" + ")}`;
+    }
     default: return JSON.stringify(a);
   }
 }

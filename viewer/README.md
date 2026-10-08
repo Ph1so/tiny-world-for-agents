@@ -37,10 +37,22 @@ turns the alien name toggle on, `debug=1` shows draw calls and triangles.
 Keys: space play/pause, left/right one step (shift for 50), `e` next event, `m` next memory edit.
 Drag to orbit, wheel to zoom, right drag to pan.
 
+## Run control
+
+The picker has a "new run" form (LLM agent with any model in `configs/models.yaml`, or a bot with
+a step delay; memory size, world steps, seed, normal or hard world, run id). Starting a run opens
+it live. In a run view, while the run is not finished, the transport bar shows its state and
+pause / resume / stop buttons. These control the runner process, not playback: pause waits
+before the next agent step, stop ends it after the current step without a summary so it can be
+resumed later. Stopped runs also have a resume button in the picker. The action chip says
+"run paused" or "run stopped" when live playback catches up. See "Run control" in
+`docs/INTERFACES.md` for the endpoints and the control files.
+
 ## Panels
 
 - Status: run id, controller, model, day, world step, step within the day, light, agent step,
-  vitals bars, inventory with tool uses left.
+  vitals bars, inventory with tool uses left and slots used (when the world limits them), and
+  every chest with what it holds at this step.
 - Agent: thought, action, result, and the observation exactly as logged for the current agent step.
 - Memory: the file after the current agent step with a usage bar. The last edit is shown as a diff
   against the version before it (additions green, removals red, word level inside changed lines).
@@ -51,6 +63,27 @@ Drag to orbit, wheel to zoom, right drag to pan.
 
 Scrubbing to world step `t` shows agent step `i` of the world line at `t`, its observation (taken
 at `t_start`), and the memory file after that step's ops.
+
+## Action animations
+
+The agent is animated for the action in progress, read from `steps.jsonl`: legs and arms swing
+when walking, it chops with its pickaxe at the block it mines (cracks spread over the block as the
+steps pass, chips fly, the block bursts and the item flies to the agent), reaches out to place
+(an outline settles on the new block), works with both hands to craft (sparkles on success),
+lifts food to its mouth to eat, and swings at a creature it attacks. With chests it reaches into
+the chest it stores in or takes from (the lid opens toward it, item cubes fly in or out), and a
+drop scatters the items at its feet. It turns to face what it
+works on, and POV looks at that block. A hurt flashes the agent red.
+
+A chip at the top left of the stage says what the agent is doing, with a bar for actions that
+take several world steps and the result once done. Results also float up over the agent
+("+1 log", "✖ blocked"). In live mode, while the model is still answering, the chip says
+"thinking…" and the agent rests a hand on its chin. Effects only fire when playback moves forward
+a few steps at a time, so scrubbing does not set them off. Short actions hold their pose for a
+moment so they can be seen at high speeds.
+
+Code: `src/scene/action.ts` (which action is on screen, labels), `src/scene/agent.ts` (jointed
+agent and poses), `src/scene/fx.ts` (particles, cracks, outlines, flying items, floating text).
 
 ## Recording
 

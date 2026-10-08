@@ -3,7 +3,7 @@
 import { RunData } from "./run";
 import type { FileName, StreamMessage } from "./types";
 
-const FILES: FileName[] = ["world", "steps", "memory", "events"];
+const FILES: FileName[] = ["world", "steps", "memory", "events", "longterm"];
 
 export interface RunListEntry {
   run_id: string;
@@ -12,14 +12,71 @@ export interface RunListEntry {
   memory_chars: number;
   seed: number | null;
   names?: string;
+  max_steps?: number | null;
   world_steps: number;
   finished: boolean;
+  /** finished | running | paused | stopping | stopped (see tinyworld/server/control.py) */
+  state?: RunState;
+  lineage?: string | null;
+  generation?: number | null;
+  longterm_chars?: number;
 }
+
+export type RunState = "finished" | "running" | "paused" | "stopping" | "stopped";
 
 export async function listRuns(): Promise<RunListEntry[]> {
   const r = await fetch("/api/runs");
   if (!r.ok) throw new Error(`GET /api/runs: ${r.status}`);
   return r.json();
+}
+
+export async function getRun(runId: string): Promise<RunListEntry> {
+  const r = await fetch(`/api/runs/${encodeURIComponent(runId)}`);
+  if (!r.ok) throw new Error(`GET run: ${r.status}`);
+  return r.json();
+}
+
+// ------------------------------------------------------------------ run control
+
+export interface ModelOption { name: string; provider: string | null; model: string | null; input_per_m: number | null; output_per_m: number | null }
+export interface LineageOption { name: string; generations: number; chars: number; longterm_chars: number | null; busy: string | null }
+export interface Options { controls: boolean; models: ModelOption[]; worlds: string[]; lineages?: LineageOption[] }
+
+export interface RunSpec {
+  controller: string;
+  model?: string;
+  memory_chars?: number;
+  max_steps?: number;
+  seed?: number;
+  world?: string;
+  run_id?: string;
+  step_delay?: number;
+  lineage?: string;
+  longterm_chars?: number;
+}
+
+export async function getOptions(): Promise<Options> {
+  const r = await fetch("/api/options");
+  if (!r.ok) return { controls: false, models: [], worlds: [] };   // an older server
+  return r.json();
+}
+
+/** POST with the header the server wants for control calls. Throws with the server's message. */
+async function post(url: string, body?: unknown): Promise<RunListEntry> {
+  const r = await fetch(url, {
+    method: "POST",
+    headers: { "X-Tinyworld": "1", "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(typeof data.detail === "string" ? data.detail : `${r.status}`);
+  return data;
+}
+
+export function startRun(spec: RunSpec): Promise<RunListEntry> { return post("/api/runs", spec); }
+
+export function controlRun(runId: string, action: "pause" | "resume" | "stop"): Promise<RunListEntry> {
+  return post(`/api/runs/${encodeURIComponent(runId)}/${action}`);
 }
 
 async function fetchConfig(run: RunData): Promise<void> {
@@ -64,8 +121,8 @@ export function connectLive(run: RunData, onStatus?: (msg: string) => void): () 
   let queue: Promise<void> = Promise.resolve();
   // Lines already ingested per file. After a reconnect the server resends the history, and
   // these counts let us skip what we already have.
-  const seen: Record<string, number> = { world: 0, steps: 0, memory: 0, events: 0 };
-  const skip: Record<string, number> = { world: 0, steps: 0, memory: 0, events: 0 };
+  const seen: Record<string, number> = { world: 0, steps: 0, memory: 0, events: 0, longterm: 0 };
+  const skip: Record<string, number> = { world: 0, steps: 0, memory: 0, events: 0, longterm: 0 };
   fetchConfig(run).catch(() => undefined);
 
   const open = () => {

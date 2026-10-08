@@ -7,6 +7,15 @@
                                          are written. The snapshot (world line 0) comes first.
     GET  /                               the built viewer (viewer/dist) when it exists
 
+Run control (off with --read-only). Every POST needs the header X-Tinyworld: 1 and, if the
+browser sends an Origin, one that matches the Host, so another web page cannot start runs:
+
+    GET  /api/options                    models, world configs, lineages, and whether control is on
+    POST /api/runs                       start a run, JSON body (see control.RunControl.start)
+    POST /api/runs/{run_id}/pause        pause before the next agent step
+    POST /api/runs/{run_id}/resume       unpause, or continue a stopped run with --resume
+    POST /api/runs/{run_id}/stop         stop after the current step (resumable)
+
 See docs/INTERFACES.md, "Live server".
 """
 from __future__ import annotations
@@ -17,11 +26,15 @@ from pathlib import Path
 from typing import Any, Iterator
 
 import yaml
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from urllib.parse import urlparse
+
+from fastapi import Body, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-JSONL_FILES = ["world", "steps", "memory", "events"]
+from tinyworld.server.control import ControlError, RunControl
+
+JSONL_FILES = ["world", "steps", "memory", "events", "longterm"]   # longterm only for lineage runs
 SERVED_FILES = {"config.yaml", "summary.json"} | {f"{n}.jsonl" for n in JSONL_FILES}
 TAIL_INTERVAL_S = 0.25
 DEFAULT_VIEWER_DIST = Path(__file__).resolve().parents[2] / "viewer" / "dist"
@@ -92,6 +105,9 @@ class RunStore:
             "max_steps": cfg.get("max_steps"),
             "world_steps": int(last.get("t", 0)) if last else 0,
             "finished": (p / "summary.json").exists(),
+            "lineage": cfg.get("lineage"),
+            "generation": cfg.get("generation"),
+            "longterm_chars": cfg.get("longterm_chars", 0),
         }
 
 
@@ -123,14 +139,68 @@ class LineTailer:
                 continue
 
 
-def create_app(runs_dirs: list[Path] | None = None, viewer_dist: Path | None = None) -> FastAPI:
+def create_app(runs_dirs: list[Path] | None = None, viewer_dist: Path | None = None,
+               controls: bool = True) -> FastAPI:
     store = RunStore(runs_dirs or [Path("runs")])
+    control = RunControl(store.dirs)
     app = FastAPI(title="tinyworld")
     app.state.store = store
+    app.state.control = control
+
+    def with_state(d: dict, run_dir: Path) -> dict:
+        d["state"] = control.state(run_dir)
+        return d
+
+    def guard(request: Request) -> None:
+        if not controls:
+            raise HTTPException(403, "run control is off (server started with --read-only)")
+        if request.headers.get("x-tinyworld") != "1":
+            raise HTTPException(403, "missing X-Tinyworld header")
+        origin = request.headers.get("origin")
+        if origin and urlparse(origin).netloc != request.headers.get("host"):
+            raise HTTPException(403, "cross-origin request refused")
+
+    def act(request: Request, run_id: str, fn) -> dict:
+        guard(request)
+        run_dir = store.find(run_id)
+        if run_dir is None:
+            raise HTTPException(404, "no such run")
+        try:
+            fn(run_dir)
+        except ControlError as e:
+            raise HTTPException(e.status, str(e))
+        return with_state(RunStore.describe(run_dir), run_dir)
 
     @app.get("/api/runs")
     def list_runs() -> list[dict]:
-        return store.list()
+        return [with_state(r, store.find(r["run_id"])) for r in store.list()]
+
+    @app.get("/api/options")
+    def options() -> dict:
+        return {"controls": controls, "models": control.models(), "worlds": control.worlds(),
+                "lineages": control.lineages()}
+
+    @app.post("/api/runs")
+    def start_run(request: Request, spec: dict = Body(...)) -> dict:
+        guard(request)
+        try:
+            run_id = control.start(spec)
+        except ControlError as e:
+            raise HTTPException(e.status, str(e))
+        run_dir = store.find(run_id)
+        return with_state(RunStore.describe(run_dir), run_dir) if run_dir else {"run_id": run_id}
+
+    @app.post("/api/runs/{run_id}/pause")
+    def pause_run(request: Request, run_id: str) -> dict:
+        return act(request, run_id, control.pause)
+
+    @app.post("/api/runs/{run_id}/resume")
+    def resume_run(request: Request, run_id: str) -> dict:
+        return act(request, run_id, control.resume)
+
+    @app.post("/api/runs/{run_id}/stop")
+    def stop_run(request: Request, run_id: str) -> dict:
+        return act(request, run_id, control.stop)
 
     @app.get("/api/runs/{run_id}/{file}")
     def get_file(run_id: str, file: str):
@@ -150,7 +220,7 @@ def create_app(runs_dirs: list[Path] | None = None, viewer_dist: Path | None = N
         run_dir = store.find(run_id)
         if run_dir is None:
             raise HTTPException(404, "no such run")
-        return JSONResponse(RunStore.describe(run_dir))
+        return JSONResponse(with_state(RunStore.describe(run_dir), run_dir))
 
     @app.websocket("/ws/runs/{run_id}")
     async def ws_run(ws: WebSocket, run_id: str):

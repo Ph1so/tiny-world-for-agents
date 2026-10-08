@@ -13,6 +13,10 @@ night_start: 200
 dim_steps: 20
 torch_light: 6
 
+inventory_slots: 10         # a slot holds one tool or up to stack_size of an item; 0 = no limit
+stack_size: 32
+chest_slots: 20
+
 reach: 3
 attack_reach: 2
 station_reach: 2
@@ -45,6 +49,7 @@ hardness:
   planks: 3
   workbench: 4
   door: 4
+  chest: 4
   furnace: 6
   stone: 8
   coal ore: 10
@@ -55,10 +60,14 @@ durability:
   wood pickaxe: 30
   stone pickaxe: 60
   iron pickaxe: 150
+  wood sword: 20
   stone sword: 40
   iron sword: 100
+  iron helmet: 30
+  iron chestplate: 40
 hand_damage: 2
-sword_damage: {stone sword: 4, iron sword: 6}
+sword_damage: {wood sword: 3, stone sword: 4, iron sword: 6}
+armor: {iron helmet: 1, iron chestplate: 2}   # zombie damage taken off per piece held, at least 1 gets through
 
 terrain:
   base_height: 15.2
@@ -71,10 +80,10 @@ terrain:
   stone_line: 19
   lake_radius: 4.5
   lake_depth: 3
-  coal_rate: 0.03
-  iron_rate: 0.02
-  surface_coal: 8
-  surface_iron: 8
+  coal_rate: 0.05
+  iron_rate: 0.035
+  surface_coal: 14
+  surface_iron: 14
   forest_tree_rate: 0.10
   plain_tree_rate: 0.006
   min_trees: 10
@@ -92,10 +101,10 @@ creatures:
   health: {sheep: 6, chicken: 4, zombie: 10}
   meat: {sheep: 2, chicken: 1, zombie: 0}
   zombie_max: 10            # LETHAL NIGHTS: more zombies at once
-  zombie_spawn_prob: 0.08
+  zombie_spawn_prob: 0.12
   zombie_spawn_min_dist: 12
   zombie_spawn_max_dist: 24
-  zombie_chase_dist: 10
+  zombie_chase_dist: 20
   zombie_step_every: 1      # LETHAL NIGHTS: zombies move at the agent's speed
   zombie_damage: 4          # LETHAL NIGHTS: hits hurt more
   zombie_cooldown: 2
