@@ -307,7 +307,8 @@ def memory_metrics(run: RunFiles) -> dict:
     steps, mem = run.steps, run.memory
     used = [s.get("memory_chars_used", 0) for s in steps]
     edits = [m for m in mem if m.get("i", 0) > 0]
-    ops = Counter(op.get("op", "?") for m in edits if m.get("accepted", True) for op in m.get("ops", []))
+    ops = Counter(op.get("op", "?") for m in edits if m.get("accepted", True)
+                  for op in m.get("ops", []) if isinstance(op, dict))
     changed = []
     prev = ""
     versions = []

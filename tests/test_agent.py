@@ -93,8 +93,9 @@ def test_parse_failures_give_one_step_wait(text):
 def test_parse_odd_shapes():
     p = parse_reply('{"thought": {"a": 1}, "memory": {"op": "append", "text": "x"}, "action": {"name": "wait"}}')
     assert p.ok and p.thought == '{"a": 1}' and p.memory_ops == [{"op": "append", "text": "x"}]
+    # a bare string memory is read as a rewrite to that string (see normalize_memory)
     p = parse_reply('{"memory": "bad", "action": {"name": "wait"}}')
-    assert p.ok and p.memory_ops == [] and p.thought == ""
+    assert p.ok and p.memory_ops == [{"op": "rewrite", "text": "bad"}] and p.thought == ""
 
 
 # ----------------------------------------------------------------- controller, one step at a time
@@ -316,3 +317,38 @@ def test_cli_llm_run_and_run_config(tmp_path):
     out = subprocess.run([sys.executable, "-m", "tinyworld.runner.run", "--run-config", str(cfg), "--resume"],
                          capture_output=True, text=True, cwd=root)
     assert out.returncode == 0, out.stderr
+
+
+# --- memory field coercion from real-model shapes (added after the first Haiku run) ---
+from tinyworld.agent.parser import normalize_memory, parse_reply
+
+
+def test_normalize_memory_list_of_strings_is_rewrite():
+    ops = normalize_memory(["line a", "line b"])
+    assert ops == [{"op": "rewrite", "text": "line a\nline b"}]
+
+
+def test_normalize_memory_bare_string_is_rewrite():
+    assert normalize_memory("notes") == [{"op": "rewrite", "text": "notes"}]
+
+
+def test_normalize_memory_op_dicts_pass_through():
+    ops = [{"op": "append", "text": "x"}, {"op": "rewrite", "text": "y"}]
+    assert normalize_memory(ops) == ops
+
+
+def test_normalize_memory_mixed_list():
+    ops = normalize_memory(["note", {"op": "replace", "old": "a", "new": "b"}])
+    assert ops == [{"op": "append", "text": "note"},
+                   {"op": "replace", "old": "a", "new": "b"}]
+
+
+def test_list_of_strings_memory_actually_lands_in_file():
+    reply = ('{"thought":"t","memory":["Start (1,2,3)","Plan: gather"],'
+             '"action":{"name":"wait","steps":1}}')
+    p = parse_reply(reply)
+    assert p.ok
+    from tinyworld.agent.memory import MemoryFile
+    mf = MemoryFile(limit=2000)
+    res = mf.apply(p.memory_ops, step=1)
+    assert res.accepted and mf.text == "Start (1,2,3)\nPlan: gather"

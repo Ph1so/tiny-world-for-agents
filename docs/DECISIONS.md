@@ -118,3 +118,20 @@ Independent review on 2026-10-07. Every acceptance check in PLAN.md section 12 w
 82. **`configs/sweeps/memory_sweep.yaml`** had the placeholder model names from PLAN.md (`model_a`, `model_b`). It now names `haiku` and `sonnet`. Its estimate ($89) is over its $25 budget on purpose: the cost guard stops it. `first_real.yaml` is the small real sweep to run first (about $0.11 estimated).
 83. **Not measured: 60 fps.** Headless Chromium here runs on SwiftShader (software GL), so the frame time it reports (40 to 100 ms per frame) says nothing about a laptop GPU. The claim still rests on draw calls (40 to 52) and triangle counts (120 to 160 k), which is well within what a laptop draws at 60 fps. The owner should check once on real hardware with `?debug=1`.
 84. **Not run: a 200 step run with a real model.** No API key in the review sandbox. The exact command is in `docs/STATUS.md`. The network error path was checked: a missing key fails at once with "ANTHROPIC_API_KEY is not set. Put it in .env (see .env.example)."
+
+## Memory coercion (after the first real Haiku run)
+
+85. The first real run (Haiku, 200 steps) wrote its memory as `"memory": ["line", "line"]`,
+    a list of plain strings, every step. The documented schema is a list of op dicts
+    ({"op":"append"...}), so the old code silently dropped every edit: the memory file stayed
+    empty for the whole run and the model never saw its own notes. That defeats the point of the
+    experiment, so `parser.normalize_memory` now coerces the common real-model shapes into
+    documented ops. Judgment call: a list where every item is a string is read as a single
+    `rewrite` to those lines joined by newlines, because the model emits its full intended notes
+    each step (a snapshot), not deltas. A mixed list keeps op dicts and treats bare strings as
+    appends. A bare string is a rewrite. This keeps logs conformant to INTERFACES.md and never
+    silently loses an edit. Revisit if a model turns out to emit append-deltas as bare strings;
+    for that model a rewrite would wrongly discard its history. The system prompt was left exactly
+    as PLAN.md section 7 (a test pins it), so the fix lives entirely in the parser.
+86. metrics.memory_metrics now ignores non-dict ops defensively, so a stray op shape can never
+    crash summary.json again.

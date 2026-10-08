@@ -25,6 +25,38 @@ class Parsed:
     error: str | None = None
 
 
+def normalize_memory(value) -> list:
+    """Turn the reply's "memory" field into a list of documented op dicts.
+
+    The schema (PLAN.md section 7) is a list of op objects, but real models often ignore it
+    and just emit their notes as text. We coerce the common shapes so the edit is not silently
+    lost, and so the logged ops always conform to docs/INTERFACES.md:
+      - a bare string                  -> one rewrite to that string
+      - a list where every item is str -> one rewrite to the items joined by newlines
+                                           (models that emit a full snapshot each step, which is
+                                            what we see in practice)
+      - a list of op dicts             -> used as-is (the documented form)
+      - a mixed list                   -> op dicts kept, bare strings become appends
+      - a single op dict               -> wrapped in a list
+    See docs/DECISIONS.md "Memory coercion".
+    """
+    if isinstance(value, str):
+        return [{"op": "rewrite", "text": value}]
+    if isinstance(value, dict):
+        return [value]
+    if not isinstance(value, list):
+        return []
+    if value and all(isinstance(x, str) for x in value):
+        return [{"op": "rewrite", "text": "\n".join(value)}]
+    ops = []
+    for x in value:
+        if isinstance(x, dict):
+            ops.append(x)
+        elif isinstance(x, str):
+            ops.append({"op": "append", "text": x})
+    return ops
+
+
 def _candidates(text: str):
     """Strings that might hold the object, most likely first."""
     t = text.strip()
@@ -74,9 +106,5 @@ def parse_reply(text: str) -> Parsed:
     thought = obj.get("thought", "")
     if not isinstance(thought, str):
         thought = json.dumps(thought)
-    ops = obj.get("memory", [])
-    if isinstance(ops, dict):
-        ops = [ops]
-    if not isinstance(ops, list):
-        ops = []
+    ops = normalize_memory(obj.get("memory", []))
     return Parsed(True, thought=thought, memory_ops=ops, action=action)
