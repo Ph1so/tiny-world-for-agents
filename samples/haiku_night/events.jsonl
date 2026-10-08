@@ -1,0 +1,94 @@
+{"t": 3, "i": 1, "type": "first_mine", "detail": {"block": "log"}}
+{"t": 13, "i": 5, "type": "craft_fail", "detail": {"items": {"log": 3}}}
+{"t": 14, "i": 6, "type": "first_craft", "detail": {"item": "planks"}}
+{"t": 19, "i": 8, "type": "first_craft", "detail": {"item": "workbench"}}
+{"t": 21, "i": 10, "type": "first_place", "detail": {"block": "workbench"}}
+{"t": 26, "i": 15, "type": "craft_fail", "detail": {"items": {"log": 2}}}
+{"t": 28, "i": 17, "type": "craft_fail", "detail": {"items": {"planks": 2, "log": 1}}}
+{"t": 29, "i": 18, "type": "first_craft", "detail": {"item": "sticks"}}
+{"t": 31, "i": 20, "type": "first_craft", "detail": {"item": "wood pickaxe"}}
+{"t": 35, "i": 21, "type": "first_mine", "detail": {"block": "stone"}}
+{"t": 50, "i": 28, "type": "first_mine", "detail": {"block": "grass"}}
+{"t": 51, "i": 29, "type": "first_mine", "detail": {"block": "dirt"}}
+{"t": 76, "i": 54, "type": "parse_fail", "detail": {"error": "no JSON object", "chars": 917}}
+{"t": 103, "i": 81, "type": "parse_fail", "detail": {"error": "no JSON object", "chars": 815}}
+{"t": 105, "i": 83, "type": "craft_fail", "detail": {"items": {"planks": 3, "sticks": 2, "stone": 3}}}
+{"t": 108, "i": 86, "type": "craft_fail", "detail": {"items": {"planks": 3, "sticks": 2, "stone": 3}}}
+{"t": 109, "i": 87, "type": "parse_fail", "detail": {"error": "no action object with a name", "chars": 986}}
+{"t": 110, "i": 88, "type": "craft_fail", "detail": {"items": {"planks": 3, "sticks": 2, "stone": 3}}}
+{"t": 111, "i": 89, "type": "first_craft", "detail": {"item": "stone pickaxe"}}
+{"t": 115, "i": 90, "type": "first_mine", "detail": {"block": "iron ore"}}
+{"t": 135, "i": 97, "type": "first_mine", "detail": {"block": "coal ore"}}
+{"t": 182, "i": 115, "type": "parse_fail", "detail": {"error": "no action object with a name", "chars": 1412}}
+{"t": 195, "i": 126, "type": "parse_fail", "detail": {"error": "no JSON object", "chars": 843}}
+{"t": 200, "i": 130, "type": "night_start", "detail": {"day": 1}}
+{"t": 204, "i": 133, "type": "parse_fail", "detail": {"error": "no JSON object", "chars": 968}}
+{"t": 206, "i": 135, "type": "parse_fail", "detail": {"error": "no action object with a name", "chars": 249}}
+{"t": 221, "i": 150, "type": "parse_fail", "detail": {"error": "no JSON object", "chars": 9}}
+{"t": 227, "i": 156, "type": "parse_fail", "detail": {"error": "no JSON object", "chars": 964}}
+{"t": 235, "i": 164, "type": "parse_fail", "detail": {"error": "no action object with a name", "chars": 1048}}
+{"t": 237, "i": 166, "type": "parse_fail", "detail": {"error": "no JSON object", "chars": 860}}
+{"t": 240, "i": 169, "type": "parse_fail", "detail": {"error": "no JSON object", "chars": 962}}
+{"t": 244, "i": 173, "type": "parse_fail", "detail": {"error": "no JSON object", "chars": 338}}
+{"t": 247, "i": 176, "type": "parse_fail", "detail": {"error": "no action object with a name", "chars": 1163}}
+{"t": 251, "i": 180, "type": "parse_fail", "detail": {"error": "no action object with a name", "chars": 1253}}
+{"t": 253, "i": 182, "type": "parse_fail", "detail": {"error": "no JSON object", "chars": 745}}
+{"t": 256, "i": 185, "type": "parse_fail", "detail": {"error": "no JSON object", "chars": 1049}}
+{"t": 257, "i": 186, "type": "parse_fail", "detail": {"error": "no JSON object", "chars": 958}}
+{"t": 270, "i": 197, "type": "parse_fail", "detail": {"error": "no JSON object", "chars": 860}}
+{"t": 285, "i": 210, "type": "parse_fail", "detail": {"error": "no JSON object", "chars": 871}}
+{"t": 300, "i": 223, "type": "day_start", "detail": {"day": 2}}
+{"t": 304, "i": 226, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 306, "i": 229, "type": "parse_fail", "detail": {"error": "no action object with a name", "chars": 806}}
+{"t": 309, "i": 231, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 309, "i": 232, "type": "parse_fail", "detail": {"error": "no action object with a name", "chars": 742}}
+{"t": 314, "i": 236, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 319, "i": 239, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 324, "i": 244, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 325, "i": 246, "type": "parse_fail", "detail": {"error": "no action object with a name", "chars": 282}}
+{"t": 329, "i": 249, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 334, "i": 254, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 339, "i": 259, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 341, "i": 262, "type": "parse_fail", "detail": {"error": "no action object with a name", "chars": 725}}
+{"t": 344, "i": 264, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 349, "i": 269, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 354, "i": 274, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 357, "i": 278, "type": "parse_fail", "detail": {"error": "no action object with a name", "chars": 844}}
+{"t": 359, "i": 279, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 362, "i": 283, "type": "parse_fail", "detail": {"error": "no JSON object", "chars": 9}}
+{"t": 364, "i": 284, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 369, "i": 289, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 374, "i": 294, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 379, "i": 299, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 383, "i": 304, "type": "parse_fail", "detail": {"error": "no action object with a name", "chars": 1011}}
+{"t": 384, "i": 304, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 385, "i": 306, "type": "parse_fail", "detail": {"error": "no JSON object", "chars": 26}}
+{"t": 388, "i": 309, "type": "parse_fail", "detail": {"error": "no action object with a name", "chars": 84}}
+{"t": 389, "i": 309, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 394, "i": 314, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 397, "i": 318, "type": "parse_fail", "detail": {"error": "no JSON object", "chars": 923}}
+{"t": 399, "i": 319, "type": "hurt", "detail": {"cause": "hunger", "amount": 1}}
+{"t": 399, "i": 319, "type": "death", "detail": {"cause": "hunger", "pos": [33, 6, 32]}}
+{"t": 399, "i": 319, "type": "respawn", "detail": {"pos": [32, 6, 32]}}
+{"t": 459, "i": 379, "type": "parse_fail", "detail": {"error": "no action object with a name", "chars": 674}}
+{"t": 470, "i": 390, "type": "parse_fail", "detail": {"error": "no JSON object", "chars": 640}}
+{"t": 472, "i": 392, "type": "parse_fail", "detail": {"error": "no action object with a name", "chars": 91}}
+{"t": 477, "i": 397, "type": "parse_fail", "detail": {"error": "no action object with a name", "chars": 86}}
+{"t": 483, "i": 403, "type": "parse_fail", "detail": {"error": "no JSON object", "chars": 700}}
+{"t": 486, "i": 406, "type": "parse_fail", "detail": {"error": "no action object with a name", "chars": 146}}
+{"t": 490, "i": 410, "type": "parse_fail", "detail": {"error": "no action object with a name", "chars": 885}}
+{"t": 492, "i": 412, "type": "parse_fail", "detail": {"error": "no action object with a name", "chars": 90}}
+{"t": 493, "i": 413, "type": "parse_fail", "detail": {"error": "no action object with a name", "chars": 85}}
+{"t": 498, "i": 418, "type": "parse_fail", "detail": {"error": "no action object with a name", "chars": 752}}
+{"t": 500, "i": 419, "type": "night_start", "detail": {"day": 2}}
+{"t": 500, "i": 420, "type": "parse_fail", "detail": {"error": "no action object with a name", "chars": 863}}
+{"t": 511, "i": 431, "type": "parse_fail", "detail": {"error": "no JSON object", "chars": 725}}
+{"t": 513, "i": 433, "type": "parse_fail", "detail": {"error": "no JSON object", "chars": 33}}
+{"t": 515, "i": 435, "type": "parse_fail", "detail": {"error": "no action object with a name", "chars": 66}}
+{"t": 534, "i": 454, "type": "parse_fail", "detail": {"error": "no action object with a name", "chars": 983}}
+{"t": 540, "i": 460, "type": "parse_fail", "detail": {"error": "no action object with a name", "chars": 90}}
+{"t": 551, "i": 471, "type": "parse_fail", "detail": {"error": "no action object with a name", "chars": 1323}}
+{"t": 561, "i": 481, "type": "parse_fail", "detail": {"error": "no action object with a name", "chars": 1463}}
+{"t": 580, "i": 500, "type": "parse_fail", "detail": {"error": "no action object with a name", "chars": 406}}
+{"t": 597, "i": 517, "type": "parse_fail", "detail": {"error": "no JSON object", "chars": 787}}
+{"t": 600, "i": 519, "type": "day_start", "detail": {"day": 3}}
