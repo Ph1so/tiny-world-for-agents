@@ -1,0 +1,17 @@
+# One hard-mode LLM run:
+#   uv run python -m tinyworld.runner.run --run-config configs/run_hard.yaml --run-id haiku_hard
+# Every key here is also a CLI flag; a flag given on the command line wins.
+controller: llm
+model: haiku                # entry name in configs/models.yaml
+models_file: configs/models.yaml
+seed: 1
+max_steps: 600             # world steps (two full day/night cycles)
+memory_chars: 2000         # 0 turns the memory file off
+history_window: 3          # K past action/result pairs shown each step
+max_tokens: null
+names: familiar
+shuffle_recipes: false
+on_death: respawn_keep_memory
+world: world_hard.yaml     # the three hard-mode pressures (configs/world_hard.yaml)
+runs_dir: runs
+run_id: null

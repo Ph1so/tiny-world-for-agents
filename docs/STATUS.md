@@ -2,6 +2,39 @@
 
 Reviewed 2026-10-07 from a clean install. Every check below was run by hand, not read off a test. `uv run pytest -q`: 220 passed, 0 failed, about 90 s. `npm run build`: clean.
 
+Hard mode added 2026-10-08 (see below). `uv run pytest -q`: 241 passed, 0 failed, about 100 s.
+
+## Hard mode
+
+An optional world preset with three pressures, so an LLM agent has to keep a plan in its memory
+file instead of re-deriving it each step. All knobs are config fields, OFF by default: the
+default `configs/world.yaml`, every prior test, and the samples are unchanged. Full rationale,
+knob list and renames are in docs/DECISIONS.md under "Hard mode".
+
+- **The three pressures.** Fog (`view_radius` 12->4, the "in view" block only; the viewer is
+  untouched). Lethal nights (`zombie_max` 10, `zombie_step_every` 1, `zombie_damage` 4, zombies
+  break soft blocks via `zombie_breaks`/`zombie_break_steps` but never stone/workbench/furnace/
+  door, `torch_radius` 3). Scarcity (`food_drain_every` 6, `berry_density_mult` 0.5,
+  `animal_count_mult` 0.5).
+- **Final tuned value:** only `food_drain_every` was tuned (9 gave 10/10 sensible survival = too
+  easy; 6 gives the middle ground).
+- **Measured, seeds 1-10 at 600 steps (hard):** random_bot 0/10 survive, all die in the first
+  night; sensible_bot (upgraded) 6/10 survive (losing seeds: 5 zombie + 1 hunger). Every recipe
+  reachable on seeds 1-10 (recipe graph + a spawn flood fill reaching log/stone/coal/iron/berry/
+  water with animals present). Determinism holds across two processes; alien mode and the
+  banned-words check both pass in hard mode. Numbers are reproducible from the seeded sim.
+- **Configs:** `configs/world_hard.yaml`, `configs/run_hard.yaml`, `configs/sweeps/hard_mem.yaml`.
+  A run or sweep config now names a world with a `world:` key.
+
+Run a hard-mode LLM run (the owner runs the real model; no API key was used in the build):
+
+```
+uv run python -m tinyworld.runner.run --run-config configs/run_hard.yaml --run-id haiku_hard
+#   haiku, memory 2000, K 3, on_death respawn_keep_memory, world_hard, 600 steps
+uv run python -m tinyworld.runner.sweep configs/sweeps/hard_mem.yaml
+#   haiku x memory [0, 500, 2000] x seeds [1, 2] x 600 steps, world_hard, estimate ~$0.33, budget $3
+```
+
 ## Milestones
 
 | Milestone | Status | Evidence |

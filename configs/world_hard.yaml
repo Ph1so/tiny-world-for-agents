@@ -1,0 +1,104 @@
+# Hard mode. Same world as configs/world.yaml with three pressures turned on:
+#   fog of war (view_radius), lethal nights (tougher zombies that break soft blocks),
+#   and scarcity (faster hunger, fewer berries and animals).
+# Everything else is identical to world.yaml so the comparison stays clean.
+size: [64, 32, 64]
+sea_level: 12
+names: familiar
+shuffle_recipes: false
+on_death: respawn_keep_memory
+
+day_length: 300
+night_start: 200
+dim_steps: 20
+torch_light: 6
+
+reach: 3
+attack_reach: 2
+station_reach: 2
+close_radius: 3
+view_radius: 4              # FOG: the "in view" block only reaches 4 cells
+
+vitals:
+  max_health: 20
+  max_food: 20
+  food_drain_every: 6       # SCARCITY: hunger drains faster (tuned; see docs/DECISIONS.md)
+  starve_every: 5
+  heal_food_min: 15
+  heal_every: 10
+  max_air: 10
+  drown_damage: 2
+  fall_safe: 3
+
+food: {berries: 2, raw meat: 3, cooked meat: 8}
+berries_per_bush: 2
+bush_regrow: 150
+
+hardness:
+  grass: 2
+  dirt: 2
+  sand: 2
+  leaves: 1
+  berry bush: 1
+  torch: 1
+  log: 4
+  planks: 3
+  workbench: 4
+  door: 4
+  furnace: 6
+  stone: 8
+  coal ore: 10
+  iron ore: 12
+tool_speed: [1, 2, 3, 4]
+
+durability:
+  wood pickaxe: 30
+  stone pickaxe: 60
+  iron pickaxe: 150
+  stone sword: 40
+  iron sword: 100
+hand_damage: 2
+sword_damage: {stone sword: 4, iron sword: 6}
+
+terrain:
+  base_height: 15.2
+  noise_scales: [16, 8, 4]
+  noise_amps: [5.0, 2.5, 1.2]
+  edge_width: 9
+  edge_depth: 7
+  hill_height: 9.0
+  hill_radius: 7.0
+  stone_line: 19
+  lake_radius: 4.5
+  lake_depth: 3
+  coal_rate: 0.03
+  iron_rate: 0.02
+  surface_coal: 8
+  surface_iron: 8
+  forest_tree_rate: 0.10
+  plain_tree_rate: 0.006
+  min_trees: 10
+  bush_rate: 0.012
+  min_bushes: 12
+  berry_density_mult: 0.5   # SCARCITY: half as many berry bushes
+
+creatures:
+  sheep_start: 6
+  chicken_start: 6
+  passive_max: 8
+  passive_respawn: 2
+  passive_move_prob: 0.25
+  animal_count_mult: 0.5    # SCARCITY: half as many sheep and chickens
+  health: {sheep: 6, chicken: 4, zombie: 10}
+  meat: {sheep: 2, chicken: 1, zombie: 0}
+  zombie_max: 10            # LETHAL NIGHTS: more zombies at once
+  zombie_spawn_prob: 0.08
+  zombie_spawn_min_dist: 12
+  zombie_spawn_max_dist: 24
+  zombie_chase_dist: 10
+  zombie_step_every: 1      # LETHAL NIGHTS: zombies move at the agent's speed
+  zombie_damage: 4          # LETHAL NIGHTS: hits hurt more
+  zombie_cooldown: 2
+  zombie_breaks: [dirt, sand, grass, leaves, planks]   # LETHAL NIGHTS: soft walls fail
+  zombie_break_steps: 4
+  torch_radius: 3           # LETHAL NIGHTS: torches suppress spawns over a smaller area

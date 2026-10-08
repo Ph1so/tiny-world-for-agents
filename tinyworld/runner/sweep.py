@@ -68,12 +68,15 @@ class RunSpec:
     names: str
     on_death: str
     shuffle_recipes: bool
+    world: str | None = None
 
     def argv(self, sweep_dir: Path) -> list[str]:
         """Command line of the child process. sweep_dir is runs/<sweep name>."""
         cmd = [sys.executable, "-m", "tinyworld.runner.run", "--controller", self.controller,
                "--seed", str(self.seed), "--max-steps", str(self.max_steps), "--run-id", self.run_id,
                "--runs-dir", str(sweep_dir), "--names", self.names, "--on-death", self.on_death, "--resume"]
+        if self.world:
+            cmd += ["--config", self.world]
         if self.shuffle_recipes:
             cmd.append("--shuffle-recipes")
         if self.controller not in BOT_CONTROLLERS:
@@ -94,6 +97,7 @@ class SweepConfig:
     names: str = "familiar"
     shuffle_recipes: bool = False
     on_death: str = "respawn_keep_memory"
+    world: str | None = None
     budget_usd: float = 0.0
     parallel_runs: int = 1
     raw: dict = field(default_factory=dict)
@@ -122,6 +126,7 @@ class SweepConfig:
             names=str(raw.get("names", "familiar")),
             shuffle_recipes=bool(raw.get("shuffle_recipes", False)),
             on_death=str(raw.get("on_death", "respawn_keep_memory")),
+            world=(str(raw["world"]) if raw.get("world") else None),
             budget_usd=float(raw.get("budget_usd", 0) or 0),
             parallel_runs=max(1, int(raw.get("parallel_runs", 1))),
             raw=raw,
@@ -132,7 +137,7 @@ class SweepConfig:
                 "max_steps": self.max_steps, "models": self.models, "memory_chars": self.memory_chars,
                 "history_window": self.history_window, "names": self.names,
                 "shuffle_recipes": self.shuffle_recipes, "on_death": self.on_death,
-                "budget_usd": self.budget_usd, "parallel_runs": self.parallel_runs}
+                "world": self.world, "budget_usd": self.budget_usd, "parallel_runs": self.parallel_runs}
 
 
 def slug(text: str) -> str:
@@ -154,7 +159,8 @@ def expand(cfg: SweepConfig) -> list[RunSpec]:
             name = f"{label}_m{mem}_k{k}_s{seed}"
             specs.append(RunSpec(name=name, run_id=name, controller=ctrl, model=model,
                                  memory_chars=mem, history_window=k, seed=seed, max_steps=cfg.max_steps,
-                                 names=cfg.names, on_death=cfg.on_death, shuffle_recipes=cfg.shuffle_recipes))
+                                 names=cfg.names, on_death=cfg.on_death, shuffle_recipes=cfg.shuffle_recipes,
+                                 world=cfg.world))
     return specs
 
 

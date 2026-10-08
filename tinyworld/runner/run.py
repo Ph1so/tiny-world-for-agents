@@ -23,6 +23,25 @@ import yaml
 
 from tinyworld.sim import World, WorldConfig, load_world_config
 
+CONFIGS_DIR = Path(__file__).resolve().parents[2] / "configs"
+
+
+def resolve_world_path(value: str | None) -> str | None:
+    """A world config name or path from a run or sweep config.
+
+    Accepts an explicit path, or a bare name such as "world_hard" or "world_hard.yaml"
+    which is looked for in configs/. None (the default) means configs/world.yaml.
+    """
+    if not value:
+        return None
+    if Path(value).exists():
+        return str(value)
+    for cand in (CONFIGS_DIR / value, CONFIGS_DIR / f"{value}.yaml"):
+        if cand.exists():
+            return str(cand)
+    return value
+
+
 FILES = ["world", "steps", "memory", "events"]
 # Per step values a controller may return next to "action". Bots return none of them.
 STEP_DEFAULTS: dict[str, Any] = {
@@ -279,12 +298,14 @@ def main(argv: list[str] | None = None) -> None:
     opts = {"controller": "sensible_bot", "model": None, "models_file": None, "memory_chars": 2000,
             "history_window": 3, "max_tokens": None, "seed": 1, "max_steps": 1500, "run_id": None,
             "runs_dir": "runs", "names": None, "shuffle_recipes": None, "on_death": None}
+    file_opts: dict = {}
     if args.run_config:
         file_opts = yaml.safe_load(Path(args.run_config).read_text()) or {}
         opts.update({k: v for k, v in file_opts.items() if k in opts})
     opts.update({k: v for k, v in vars(args).items() if k in opts and v is not None})
 
-    cfg = load_world_config(args.config, names=opts["names"], shuffle_recipes=opts["shuffle_recipes"],
+    world_path = resolve_world_path(args.config if args.config is not None else file_opts.get("world"))
+    cfg = load_world_config(world_path, names=opts["names"], shuffle_recipes=opts["shuffle_recipes"],
                             on_death=opts["on_death"])
     extra = None
     if opts["controller"] == "llm":

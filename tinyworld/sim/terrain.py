@@ -105,17 +105,19 @@ def generate(cfg: WorldConfig, rng: np.random.Generator):
         taken[z, x] = True
         return True
 
+    bush_rate = tc.bush_rate * tc.berry_density_mult
+    min_bushes = int(round(tc.min_bushes * tc.berry_density_mult))
     n_trees = n_bushes = 0
     for z, x in order:
         rate = tc.forest_tree_rate if forest[z, x] else tc.plain_tree_rate
         if r_tree[z, x] < rate:
             n_trees += tree(int(z), int(x))
-        elif r_bush[z, x] < tc.bush_rate:
+        elif r_bush[z, x] < bush_rate:
             n_bushes += bush(int(z), int(x))
     for z, x in extra:
         if n_trees < tc.min_trees:
             n_trees += tree(int(z), int(x))
-        elif n_bushes < tc.min_bushes:
+        elif n_bushes < min_bushes:
             n_bushes += bush(int(z), int(x))
         else:
             break
@@ -129,8 +131,10 @@ def generate(cfg: WorldConfig, rng: np.random.Generator):
     spawn = (sx, int(top[sz, sx]) + 1, sz)
 
     cc = cfg.creatures
+    n_sheep = max(0, int(round(cc.sheep_start * cc.animal_count_mult)))
+    n_chicken = max(0, int(round(cc.chicken_start * cc.animal_count_mult)))
     spots = [c for c in free if c != (sz, sx)]
-    picks = rng.permutation(len(spots))[: cc.sheep_start + cc.chicken_start]
-    kinds = ["sheep"] * cc.sheep_start + ["chicken"] * cc.chicken_start
+    picks = rng.permutation(len(spots))[: n_sheep + n_chicken]
+    kinds = ["sheep"] * n_sheep + ["chicken"] * n_chicken
     creatures = [(k, (spots[int(p)][1], int(top[spots[int(p)]]) + 1, spots[int(p)][0])) for k, p in zip(kinds, picks)]
     return blocks, spawn, creatures

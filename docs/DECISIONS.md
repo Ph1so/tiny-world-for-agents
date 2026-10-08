@@ -135,3 +135,75 @@ Independent review on 2026-10-07. Every acceptance check in PLAN.md section 12 w
     as PLAN.md section 7 (a test pins it), so the fix lives entirely in the parser.
 86. metrics.memory_metrics now ignores non-dict ops defensively, so a stray op shape can never
     crash summary.json again.
+
+## Hard mode (fog, lethal nights, scarcity)
+
+A second world preset, `configs/world_hard.yaml`, turns on three pressures so an LLM agent has
+to keep a real plan in its memory file instead of re-deriving everything from each observation.
+Every knob is a config field with a default that reproduces the old world, so the default
+`configs/world.yaml`, all prior tests, and the samples are unchanged. Three existing fields were
+renamed to the names the pressures use; the renames keep their old default values, and
+`configs/world.yaml` was updated in the same commit (`food_drop_every` -> `food_drain_every`,
+`zombie_move_every` -> `zombie_step_every`, `torch_no_spawn` -> `torch_radius`). The committed
+sample/fixture `config.yaml` snapshots still carry the old field names; they are frozen run
+records, read by the server and viewer as loose yaml and never re-validated, so they are left
+as-is.
+
+87. **FOG is just `view_radius`** (already a field, default 12). Hard mode sets it to 4: the "in
+    view" block only reaches 4 cells, so the agent learns the wider map only from its own memory.
+    The "close within 3 cells" block and line of sight are unchanged (no x-ray). The viewer renders
+    the god-view from world.jsonl and never reads `view_radius`, so fog lives only in the text
+    observation.
+88. **Zombie block breaking.** New knobs `zombie_breaks` (list of block names, default `[]` = off)
+    and `zombie_break_steps` (default 4). A chasing zombie that is blocked by a breakable block in
+    its path toward the agent grinds that one feet-level block; after `zombie_break_steps` adjacent
+    steps the block becomes air. Progress is per zombie and resets if it turns to a different cell.
+    Blocks not in the list stop it, so stone, workbench, furnace and door are safe and zombies
+    still cannot open doors. Net effect in hard mode (`[dirt, sand, grass, leaves, planks]`): a
+    dirt hut fails, a stone box with a door is safe. With the default empty list the whole branch
+    is skipped and the state hash is identical to before, so determinism and the old world hold.
+89. **Other zombie knobs:** `zombie_max` 6->10, `zombie_step_every` 2->1 (zombies move at the
+    agent's speed, so they cannot be outrun), `zombie_damage` 3->4. `torch_radius` (the spawn-
+    suppression distance, formerly `torch_no_spawn`) 6->3, so torches protect a smaller area;
+    `torch_light` (the dark->dim light lift, used by the viewer and metrics) is left at 6.
+90. **Scarcity.** `vitals.food_drain_every` (hunger interval), `terrain.berry_density_mult` and
+    `creatures.animal_count_mult` (both 1.0 by default). The multipliers scale berry-bush spawn
+    rate and minimum count, and sheep+chicken start counts, max, and morning respawn. They are
+    applied so that a value of 1.0 draws from the seeded generator exactly as before (no rng
+    consumed differently), so the default world is byte-identical.
+91. **Final hard-mode values and tuning.** view_radius 4; zombies max 10, step_every 1, damage 4,
+    breaks `[dirt, sand, grass, leaves, planks]`, break_steps 4, torch_radius 3; food_drain_every
+    6; berry_density_mult 0.5; animal_count_mult 0.5. Only `food_drain_every` was tuned away from
+    the first guess: at 9 (with everything else as above) the upgraded sensible bot survived 10/10
+    seeds at 600 steps (too easy). Lowering it stepwise gave 9/10 at 7 and 6/10 at 6, so 6 is the
+    final value. The deaths it produces are mostly "caught at night with a half-built shelter"
+    (food is scarce enough that balancing foraging against gathering a night's worth of stone
+    sometimes runs the agent out of daylight) plus some starvation, which is the middle ground the
+    experiment wants: planning required, but clearly possible.
+92. **Measured survival, seeds 1-10 at 600 steps, hard mode.** random_bot: 0/10 survive, all 10
+    die in the first night (first death t 124-237); it never shelters. sensible_bot (upgraded):
+    6/10 survive the full 600 steps; the four deaths are 5 zombie + 1 hunger across the losing
+    seeds. So random dies early and often, sensible survives on roughly half.
+93. **Every recipe is reachable in hard mode.** Checked two ways, both on seeds 1-10 with the
+    hard world: `recipes.all_reachable(BASE)` (the recipe graph, world-independent) holds, and a
+    flood fill of walkable cells from spawn reaches at least one cell of log, stone, coal ore,
+    iron ore, berry bush and water within reach, with animals present, on every seed. So every
+    recipe's raw inputs are obtainable. The hard world only changes vitals, zombie behaviour, the
+    view radius, and halves berry/animal density; it removes no resource type. (The survival-first
+    sensible bot does not speed-run all 13 crafts within 600 steps because it spends its time
+    sheltering and eating under the pressures; that is expected and is not what "reachable" means
+    here.)
+94. **Upgraded sensible bot.** All new behaviour is gated behind a non-empty `zombie_breaks`, so
+    easy mode is untouched (the easy balance tests still pass and it still crafts all 13 on seeds
+    1-20). In hard mode it (a) keeps a reserve of stone on hand for the night and crafts one door
+    during the day (`_hard_prep`), (b) builds its night shelter out of blocks a zombie cannot
+    break (stone), with one door for the entrance (`_wall_choice`), falling back to cutting fresh
+    stone if it runs short, and (c) reclaims the stone walls and the door each morning
+    (`_leave`). It reads the world directly, so fog does not affect it.
+95. **Runner `world:` key.** A run config (`configs/run_hard.yaml`) and a sweep config
+    (`configs/sweeps/hard_mem.yaml`) can now name a world yaml with a `world:` key
+    (`world_hard`, `world_hard.yaml`, or a path; resolved against `configs/`). `run.py` reads it
+    when `--config` is not given on the command line; the sweep passes it to each child as
+    `--config`. The resolved world is stored in `config.yaml` as before, so resume and the viewer
+    are unaffected. Determinism in hard mode was confirmed identical across two fresh processes;
+    alien mode and the banned-words check both still pass in hard mode.

@@ -302,7 +302,7 @@ class World:
             c["pos"][1] = y
             d = None
             if c["kind"] == "zombie":
-                if self.t % cc.zombie_move_every:
+                if self.t % cc.zombie_step_every:
                     continue
                 if cheb(c["pos"], self.pos) <= cc.zombie_chase_dist:
                     ddx, ddz = ax - x, az - z
@@ -310,11 +310,16 @@ class World:
                     south = ("south" if ddz > 0 else "north", ddz)
                     pair = (east, south) if abs(ddx) >= abs(ddz) else (south, east)
                     order = [name for name, dd in pair if dd]
+                    moved = False
                     for o in order:
                         tgt = self._creature_target(c, o)
                         if tgt:
                             c["pos"] = list(tgt)
+                            c.pop("break", None)
+                            moved = True
                             break
+                    if not moved and cc.zombie_breaks:
+                        self._zombie_break(c, order)
                     continue
                 if self.rng.random() < 0.5:
                     d = defs.HORIZONTAL[int(self.rng.integers(4))]
@@ -338,7 +343,7 @@ class World:
                 y = self._surface(x, z)
                 if y is None or self._occupied(x, y, z):
                     continue
-                if any(cheb((x, y, z), tp) <= cc.torch_no_spawn for tp in torches):
+                if any(cheb((x, y, z), tp) <= cc.torch_radius for tp in torches):
                     continue
                 self._spawn("zombie", (x, y, z))
                 break
@@ -354,6 +359,32 @@ class World:
                     self._damage(cc.zombie_damage, "zombie")
                     self._last_hit = self.t
                     break
+
+    def _zombie_break(self, c: dict, order: list[str]) -> None:
+        """A chasing zombie blocked by a breakable block grinds it down, then removes it.
+
+        It works on the block right in its path toward the agent, at its own feet level.
+        Progress is per zombie and resets if it turns to a different cell. Blocks not in
+        zombie_breaks (stone, workbench, furnace, door) stop it, so a stone box is safe.
+        """
+        breaks = self.cfg.creatures.zombie_breaks
+        x, y, z = c["pos"]
+        for o in order:
+            dx, _, dz = DIRS[o]
+            cell = (x + dx, y, z + dz)
+            if not self.inb(*cell) or self.block(*cell) not in breaks:
+                continue
+            prog = c.get("break")
+            if not prog or tuple(prog[0]) != cell:
+                prog = [list(cell), 0]
+            prog[1] += 1
+            if prog[1] >= self.cfg.creatures.zombie_break_steps:
+                self.set_block(*cell, "air")
+                c.pop("break", None)
+            else:
+                c["break"] = prog
+            return
+        c.pop("break", None)
 
     def visible_creatures(self) -> list[dict]:
         from .observe import visible_creatures
@@ -380,7 +411,7 @@ class World:
     def _vitals_tick(self) -> None:
         v = self.cfg.vitals
         self._food_tick += 1
-        if self._food_tick >= v.food_drop_every:
+        if self._food_tick >= v.food_drain_every:
             self._food_tick = 0
             self.food = max(0, self.food - 1)
         if self.food == 0:
@@ -474,9 +505,11 @@ class World:
 
     def _respawn_passives(self) -> None:
         cc = self.cfg.creatures
+        respawn = max(0, int(round(cc.passive_respawn * cc.animal_count_mult)))
+        pmax = max(0, int(round(cc.passive_max * cc.animal_count_mult)))
         for kind in defs.PASSIVE:
             n = sum(k["kind"] == kind for k in self.creatures)
-            for _ in range(min(cc.passive_respawn, cc.passive_max - n)):
+            for _ in range(min(respawn, pmax - n)):
                 for _ in range(20):
                     x, z = int(self.rng.integers(3, self.sx - 3)), int(self.rng.integers(3, self.sz - 3))
                     y = self._surface(x, z)

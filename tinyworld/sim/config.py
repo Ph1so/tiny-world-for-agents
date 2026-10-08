@@ -17,7 +17,7 @@ class _M(BaseModel):
 class Vitals(_M):
     max_health: int = 20
     max_food: int = 20
-    food_drop_every: int = 15
+    food_drain_every: int = 15        # world steps between losing one food point
     starve_every: int = 5
     heal_food_min: int = 15
     heal_every: int = 10
@@ -46,6 +46,7 @@ class Terrain(_M):
     min_trees: int = 10
     bush_rate: float = 0.012
     min_bushes: int = 12
+    berry_density_mult: float = 1.0        # scales berry bush spawn rate and minimum count
 
 
 class Creatures(_M):
@@ -54,6 +55,7 @@ class Creatures(_M):
     passive_max: int = 8
     passive_respawn: int = 2
     passive_move_prob: float = 0.25
+    animal_count_mult: float = 1.0        # scales sheep+chicken start counts, max, and respawn
     health: dict[str, int] = {"sheep": 6, "chicken": 4, "zombie": 10}
     meat: dict[str, int] = {"sheep": 2, "chicken": 1, "zombie": 0}
     zombie_max: int = 6
@@ -61,10 +63,12 @@ class Creatures(_M):
     zombie_spawn_min_dist: int = 12
     zombie_spawn_max_dist: int = 24
     zombie_chase_dist: int = 10
-    zombie_move_every: int = 2
+    zombie_step_every: int = 2            # world steps per zombie move (1 matches the agent's speed)
     zombie_damage: int = 3
     zombie_cooldown: int = 2
-    torch_no_spawn: int = 6
+    zombie_breaks: list[str] = []         # block names a blocked zombie can break (empty = none)
+    zombie_break_steps: int = 4           # steps spent adjacent to break one soft block
+    torch_radius: int = 6                 # a torch this close suppresses zombie spawns
 
 
 class WorldConfig(_M):

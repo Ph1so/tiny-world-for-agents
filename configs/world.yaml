@@ -19,7 +19,7 @@ view_radius: 12             # observation "in view" list
 vitals:
   max_health: 20
   max_food: 20
-  food_drop_every: 15
+  food_drain_every: 15
   starve_every: 5
   heal_food_min: 15
   heal_every: 10
@@ -78,6 +78,7 @@ terrain:
   min_trees: 10
   bush_rate: 0.012
   min_bushes: 12
+  berry_density_mult: 1.0  # scales berry bush spawn rate and minimum count
 
 creatures:
   sheep_start: 6
@@ -85,6 +86,7 @@ creatures:
   passive_max: 8            # per kind
   passive_respawn: 2        # per kind, each morning
   passive_move_prob: 0.25
+  animal_count_mult: 1.0    # scales sheep+chicken start, max, and respawn
   health: {sheep: 6, chicken: 4, zombie: 10}
   meat: {sheep: 2, chicken: 1, zombie: 0}
   zombie_max: 6
@@ -92,7 +94,9 @@ creatures:
   zombie_spawn_min_dist: 12
   zombie_spawn_max_dist: 24
   zombie_chase_dist: 10
-  zombie_move_every: 2
+  zombie_step_every: 2      # world steps per zombie move
   zombie_damage: 3
   zombie_cooldown: 2
-  torch_no_spawn: 6
+  zombie_breaks: []         # block names a blocked zombie can break (empty = none)
+  zombie_break_steps: 4     # steps adjacent to break one soft block
+  torch_radius: 6           # a torch this close suppresses zombie spawns

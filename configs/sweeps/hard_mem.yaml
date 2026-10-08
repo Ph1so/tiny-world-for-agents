@@ -1,0 +1,16 @@
+# Does memory matter under hard-mode pressure? One cheap model, three memory sizes, two seeds.
+#   uv run python -m tinyworld.runner.sweep configs/sweeps/hard_mem.yaml
+# Needs ANTHROPIC_API_KEY in .env. The owner runs this; no model calls happen during the build.
+name: hard_mem
+controller: llm
+seeds: [1, 2]
+max_steps: 600
+models: [haiku]
+memory_chars: [0, 500, 2000]
+history_window: [3]
+names: familiar
+shuffle_recipes: false
+on_death: respawn_keep_memory
+world: world_hard          # resolves to configs/world_hard.yaml
+budget_usd: 3
+parallel_runs: 2

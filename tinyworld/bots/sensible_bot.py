@@ -33,6 +33,8 @@ class SensibleBot:
         self.deaths = 0
         self.last: tuple | None = None
         self.order: list[str] | None = None
+        self._door_placed = False             # a door is in this night's shelter already
+        self._wall_stock = 9                  # stone kept on hand for a night's shelter (hard mode)
 
     # ------------------------------------------------------------ interface
 
@@ -59,7 +61,7 @@ class SensibleBot:
         if self.order is None:
             self.order = reach_order(w.recipes)
         if w.deaths != self.deaths:
-            self.deaths, self.walls = w.deaths, []
+            self.deaths, self.walls, self._door_placed = w.deaths, [], False
         tod = w.t % w.cfg.day_length
         stuck = self.last is not None and self.last[0] == tuple(w.pos) and "'move'" in self.last[1]
         if stuck:                                             # something stood in the way
@@ -76,6 +78,10 @@ class SensibleBot:
 
         if self._food_points(w) < self.food_target:
             a = self._get_food(w)
+            if a:
+                return a
+        if w.cfg.creatures.zombie_breaks:              # hard mode: secure a stone shelter first
+            a = self._hard_prep(w)
             if a:
                 return a
         crafted = w.firsts["craft"]
@@ -128,6 +134,8 @@ class SensibleBot:
 
     def _shelter(self, w) -> dict:
         x, y, z = w.pos
+        if not self.walls:
+            self._door_placed = False
         if w.bid(x, y, z) == defs.WATER:
             path = self._bfs(w, lambda p: w.bid(*p) != defs.WATER)
             return self._follow(path) if path else WAIT
@@ -140,11 +148,15 @@ class SensibleBot:
         inside = [c for c in w.creatures if tuple(c["pos"]) in gaps]
         if inside:
             return {"name": "attack", "id": inside[0]["id"]}
-        fill = next((i for i in FILL if w.inv.get(i, 0)), None)
+        fill, is_door = self._wall_choice(w, cell)
         if fill:
             if cell not in self.walls:
                 self.walls.append(cell)
+            if is_door:
+                self._door_placed = True
             return {"name": "place", "item": fill, "x": cell[0], "y": cell[1], "z": cell[2]}
+        if w.cfg.creatures.zombie_breaks:                 # hard mode: only stone walls are safe
+            return self._mine_for(w, "stone", frozenset())
         # Dig wall material from nearby ground, away from where the walls go.
         keep = set(shell) | {(x, y - 1, z)} | {(c[0], y - 1, c[2]) for c in shell}
         r = w.cfg.reach
@@ -165,10 +177,35 @@ class SensibleBot:
     def _leave(self, w) -> dict:
         while self.walls:
             c = self.walls[0]
-            if w.block(*c) in FILL and cheb(c, w.pos) <= w.cfg.reach and w.mine_steps(w.block(*c)):
+            b = w.block(*c)
+            if (b in FILL or b == "door") and cheb(c, w.pos) <= w.cfg.reach and w.mine_steps(b):
                 return {"name": "mine", "x": c[0], "y": c[1], "z": c[2]}
             self.walls.pop(0)
         return WAIT
+
+    def _wall_choice(self, w, cell) -> tuple[str | None, bool]:
+        """What to put in a shelter gap. Returns (item or None, is_door).
+
+        Easy mode keeps the old behaviour (any block on hand, soft first). Hard mode builds
+        with blocks a zombie cannot break (stone) and sets one door for the entrance.
+        """
+        breaks = set(w.cfg.creatures.zombie_breaks)
+        if not breaks:
+            return next((i for i in FILL if w.inv.get(i, 0)), None), False
+        roof = (w.pos[0], w.pos[1] + 2, w.pos[2])
+        if cell != roof and not self._door_placed and w.inv.get("door", 0):
+            return "door", True
+        return next((i for i in FILL if i not in breaks and w.inv.get(i, 0)), None), False
+
+    def _hard_prep(self, w) -> dict | None:
+        """Hard mode only: make a night in a stone shelter affordable before dusk."""
+        if w.pick_tier() < 1:                             # a wood pickaxe already cuts stone
+            return self._want(w, self._pick_for(1), 1, frozenset())
+        if w.inv.get("stone", 0) < self._wall_stock:
+            return self._want(w, "stone", self._wall_stock, frozenset())
+        if not w.inv.get("door") and "door" not in w.firsts["craft"]:
+            return self._want(w, "door", 1, frozenset())
+        return None
 
     # ----------------------------------------------------------- pathfinding
 
