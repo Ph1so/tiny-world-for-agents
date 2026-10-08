@@ -1,0 +1,35 @@
+{"t": 3, "i": 1, "type": "first_mine", "detail": {"block": "log"}}
+{"t": 13, "i": 5, "type": "craft_fail", "detail": {"items": {"log": 3}}}
+{"t": 14, "i": 6, "type": "first_craft", "detail": {"item": "planks"}}
+{"t": 15, "i": 7, "type": "first_craft", "detail": {"item": "workbench"}}
+{"t": 25, "i": 11, "type": "craft_fail", "detail": {"items": {"planks": 3}}}
+{"t": 26, "i": 12, "type": "first_craft", "detail": {"item": "sticks"}}
+{"t": 28, "i": 14, "type": "craft_fail", "detail": {"items": {"planks": 3, "sticks": 2}}}
+{"t": 30, "i": 16, "type": "first_place", "detail": {"block": "workbench"}}
+{"t": 31, "i": 17, "type": "first_craft", "detail": {"item": "wood pickaxe"}}
+{"t": 35, "i": 18, "type": "first_mine", "detail": {"block": "stone"}}
+{"t": 44, "i": 21, "type": "first_craft", "detail": {"item": "stone pickaxe"}}
+{"t": 64, "i": 29, "type": "parse_fail", "detail": {"error": "no action object with a name", "chars": 87}}
+{"t": 91, "i": 40, "type": "parse_fail", "detail": {"error": "no action object with a name", "chars": 163}}
+{"t": 94, "i": 43, "type": "parse_fail", "detail": {"error": "no action object with a name", "chars": 185}}
+{"t": 95, "i": 44, "type": "kill", "detail": {"kind": "sheep", "id": 2}}
+{"t": 101, "i": 47, "type": "first_mine", "detail": {"block": "berry bush"}}
+{"t": 108, "i": 53, "type": "kill", "detail": {"kind": "sheep", "id": 1}}
+{"t": 124, "i": 56, "type": "first_mine", "detail": {"block": "coal ore"}}
+{"t": 128, "i": 57, "type": "first_mine", "detail": {"block": "iron ore"}}
+{"t": 137, "i": 60, "type": "craft_fail", "detail": {"items": {"iron ore": 1, "planks": 2, "sticks": 2}}}
+{"t": 138, "i": 61, "type": "craft_fail", "detail": {"items": {"stone": 8}}}
+{"t": 139, "i": 62, "type": "craft_fail", "detail": {"items": {"stone": 8, "coal": 2}}}
+{"t": 143, "i": 64, "type": "craft_fail", "detail": {"items": {"stone": 12}}}
+{"t": 146, "i": 66, "type": "first_craft", "detail": {"item": "furnace"}}
+{"t": 150, "i": 68, "type": "craft_fail", "detail": {"items": {"iron ore": 1, "coal": 1}}}
+{"t": 152, "i": 70, "type": "first_place", "detail": {"block": "furnace"}}
+{"t": 153, "i": 71, "type": "first_craft", "detail": {"item": "iron ingot"}}
+{"t": 174, "i": 81, "type": "parse_fail", "detail": {"error": "no JSON object", "chars": 9}}
+{"t": 180, "i": 87, "type": "parse_fail", "detail": {"error": "no JSON object", "chars": 866}}
+{"t": 184, "i": 91, "type": "parse_fail", "detail": {"error": "no JSON object", "chars": 1033}}
+{"t": 188, "i": 95, "type": "parse_fail", "detail": {"error": "no action object with a name", "chars": 86}}
+{"t": 194, "i": 101, "type": "parse_fail", "detail": {"error": "no JSON object", "chars": 971}}
+{"t": 195, "i": 102, "type": "first_eat", "detail": {"item": "raw meat"}}
+{"t": 199, "i": 106, "type": "parse_fail", "detail": {"error": "no action object with a name", "chars": 1107}}
+{"t": 200, "i": 106, "type": "night_start", "detail": {"day": 1}}
