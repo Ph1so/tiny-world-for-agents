@@ -5,6 +5,9 @@
 # input_per_m / output_per_m: USD per million tokens
 # cache_read_per_m / cache_write_per_m: optional, used when the provider reports cached tokens
 # max_tokens: reply budget per call. A thinking budget must fit inside it.
+# 2048, not 1024: with a 2000-char memory the agent rewrites the whole file each step, and at 1024
+# about 4% of Haiku replies were cut off before the action (a wasted call). Truncated calls already
+# spent the full budget, so the bigger cap costs little.
 # thinking (anthropic) / reasoning (openai_compatible): optional, passed through as given
 # sampling: temperature, top_p ... leave empty for provider defaults
 # base_url, api_key_env: openai_compatible only
@@ -39,7 +42,7 @@ models:
     output_per_m: 0.50
     cache_read_per_m: 0.01
     cache_write_per_m: 0.125
-    max_tokens: 1024
+    max_tokens: 2048
     note: verified 2026-10-07 (id on the models overview and deprecations pages, price on the pricing page, prompts up to 100k tokens). The cheap default.
 
   sonnet:
@@ -49,7 +52,7 @@ models:
     output_per_m: 10.00
     cache_read_per_m: 0.10
     cache_write_per_m: 2.50
-    max_tokens: 1024
+    max_tokens: 2048
     note: verified 2026-10-07 (models overview, pricing, deprecations pages).
 
   opus:
@@ -59,7 +62,7 @@ models:
     output_per_m: 20.00
     cache_read_per_m: 0.20
     cache_write_per_m: 5.00
-    max_tokens: 1024
+    max_tokens: 2048
     note: verified 2026-10-07 (models overview, pricing, deprecations pages).
 
   sonnet_thinking:
@@ -82,7 +85,7 @@ models:
     output_per_m: 5.00
     cache_read_per_m: 0.10
     cache_write_per_m: 1.25
-    max_tokens: 1024
+    max_tokens: 2048
     note: verified 2026-10-07 (deprecations page lists the id as active, pricing page has the price). Retires no sooner than 2026-10-15.
 
   sonnet46:
@@ -92,7 +95,7 @@ models:
     output_per_m: 15.00
     cache_read_per_m: 0.30
     cache_write_per_m: 3.75
-    max_tokens: 1024
+    max_tokens: 2048
     note: verified 2026-10-07 (deprecations page lists the id as active, pricing page has the price).
 
   opus47:
@@ -102,7 +105,7 @@ models:
     output_per_m: 25.00
     cache_read_per_m: 0.50
     cache_write_per_m: 6.25
-    max_tokens: 1024
+    max_tokens: 2048
     note: verified 2026-10-07 (deprecations page lists the id as active, pricing page has the price).
 
   # ---- OpenAI --------------------------------------------------------------------------
@@ -160,7 +163,7 @@ models:
     model: anthropic/claude-sonnet-4.6
     input_per_m: 3.00
     output_per_m: 15.00
-    max_tokens: 1024
+    max_tokens: 2048
     note: unverified. Guessed OpenRouter id and price, check openrouter.ai/models before use.
 
   ollama_example:
@@ -170,5 +173,5 @@ models:
     model: llama3.1:8b
     input_per_m: 0.0
     output_per_m: 0.0
-    max_tokens: 1024
+    max_tokens: 2048
     note: local model, free, unverified id. Use whatever `ollama list` shows as the id.

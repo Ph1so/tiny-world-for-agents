@@ -13,4 +13,4 @@ shuffle_recipes: false
 on_death: respawn_keep_memory
 world: world_hard          # resolves to configs/world_hard.yaml
 budget_usd: 3
-parallel_runs: 2
+parallel_runs: 6

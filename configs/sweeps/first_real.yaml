@@ -12,4 +12,4 @@ names: familiar
 shuffle_recipes: false
 on_death: respawn_keep_memory
 budget_usd: 2
-parallel_runs: 2
+parallel_runs: 4

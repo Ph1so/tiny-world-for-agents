@@ -82,16 +82,104 @@ def _objects(s: str):
         start = s.find("{", start + 1)
 
 
+ACTION_NAMES = {"move", "mine", "place", "craft", "eat", "attack", "wait"}
+ACTION_ARGS = {"dir", "steps", "x", "y", "z", "item", "items", "id"}
+
+
+def _clean_keys(obj: dict) -> dict:
+    """Models sometimes emit `" action"` with stray whitespace inside the quotes."""
+    return {(k.strip() if isinstance(k, str) else k): v for k, v in obj.items()}
+
+
+def _is_bare_action(obj: dict) -> bool:
+    return isinstance(obj.get("name"), str) and obj["name"].strip() in ACTION_NAMES and "action" not in obj
+
+
 def extract_object(text: str) -> dict | None:
-    """The first JSON object with an "action" key, else the first object, else None."""
+    """The first JSON object with an "action" key, else a salvaged one, else the first object."""
     first: dict | None = None
+    bare_action: dict | None = None
     for cand in _candidates(text):
         for obj in _objects(cand):
+            obj = _clean_keys(obj)
             if isinstance(obj.get("action"), dict):
                 return obj
+            if bare_action is None and _is_bare_action(obj):
+                bare_action = obj
             if first is None:
                 first = obj
+    salvaged = _salvage_tool_call_style(text, bare_action)
+    if salvaged is not None:
+        return salvaged
     return first
+
+
+# Some models drift into a function-calling style instead of plain JSON, e.g.
+#   <parameter name="thought">...</parameter> <parameter name="memory">[...]</parameter>
+#   <parameter="action">{"name": "craft", ...}</parameter> </invoke> ="thought": "...", "memory": [...]
+#   <parameter name="name">move</parameter> <parameter name="dir">up</parameter>    (action fields split up)
+#   <invoke: {"name": "move", "dir": "west", "steps": 1}                              (bare action object)
+# The content is all there, only the wrapping is wrong. Pull the tagged fields out, read whatever
+# bare `"key": value` pairs are left over as one object, and assemble an action from the pieces.
+_PARAM = re.compile(r"<(?:invoke:)?parameter(?:-type)?\s*(?:name)?\s*=?\s*[\"']?([A-Za-z_]+)[\"']?\s*>(.*?)</parameter>", re.S)
+_TAG = re.compile(r"</?(?:invoke|parameter|parameter-type|function_calls|antml:[a-z_]+)[^>]*>", re.S)
+
+
+def _coerce_value(raw: str):
+    raw = raw.strip()
+    try:
+        return json.loads(raw)                      # JSON object/array/string/number
+    except json.JSONDecodeError:
+        return raw                                  # bare text, take it as a string
+
+
+def _salvage_tool_call_style(text: str, bare_action: dict | None = None) -> dict | None:
+    params: dict = {}
+    for key, raw in _PARAM.findall(text):
+        key = key.strip()
+        if key not in params:
+            params[key] = _coerce_value(raw)
+
+    fields: dict = {k: params[k] for k in ("thought", "memory") if k in params}
+    action = params.get("action")
+    if not isinstance(action, dict):
+        # a param whose value is itself an action object, under any key (e.g. <parameter="mine">{...})
+        for v in params.values():
+            if isinstance(v, dict) and _is_bare_action(v):
+                action = v
+                break
+    if not isinstance(action, dict) and isinstance(params.get("name"), str) and params["name"].strip() in ACTION_NAMES:
+        # the action's fields were split into separate tags
+        action = {"name": params["name"].strip()}
+        for k in ACTION_ARGS:
+            if k in params:
+                action[k] = params[k]
+    if not isinstance(action, dict) and bare_action is not None:
+        action = bare_action
+
+    rest = _PARAM.sub(" ", text)
+    rest = _TAG.sub(" ", rest).strip().lstrip("=").strip()
+    if rest:
+        for cand in (rest, "{" + rest + "}", "{" + rest.rstrip(", ") + "}"):
+            got = False
+            for obj in _objects(cand):
+                obj = _clean_keys(obj)
+                for k in ("thought", "memory"):
+                    if k in obj and k not in fields:
+                        fields[k] = obj[k]
+                if not isinstance(action, dict):
+                    if isinstance(obj.get("action"), dict):
+                        action = obj["action"]
+                    elif _is_bare_action(obj):
+                        action = obj
+                got = True
+                break
+            if got and isinstance(action, dict):
+                break
+    if isinstance(action, dict):
+        fields["action"] = action
+        return fields
+    return None
 
 
 def parse_reply(text: str) -> Parsed:
