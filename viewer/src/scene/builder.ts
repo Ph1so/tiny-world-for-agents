@@ -35,3 +35,13 @@ export class Builder {
     return merged;
   }
 }
+
+/**
+ * A flat, see-through colour drawn only where the mesh is hidden behind something (GreaterDepth),
+ * so a character inside a tunnel or behind a hill still shows as a silhouette. Front faces only
+ * and no depth writes, so the visible parts of the character are not tinted.
+ */
+export function xrayMaterial(color: number, opacity = 0.5): THREE.MeshBasicMaterial {
+  return new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false,
+    depthFunc: THREE.GreaterDepth, fog: false });
+}

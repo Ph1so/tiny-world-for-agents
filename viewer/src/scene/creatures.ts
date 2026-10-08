@@ -3,7 +3,7 @@
 // interpolated between steps by the caller; this file only knows how to build and pose them.
 import * as THREE from "three";
 import { AgentModel } from "./agent";
-import { Builder } from "./builder";
+import { Builder, xrayMaterial } from "./builder";
 import { CREATURE_COLORS as C } from "./palette";
 
 export function sheepGeometry(): THREE.BufferGeometry {
@@ -64,12 +64,16 @@ export type Kind = (typeof KINDS)[number];
 const BOB_SPEED: Record<Kind, number> = { sheep: 1.6, chicken: 3.2, zombie: 1.1 };
 const BOB_AMP: Record<Kind, number> = { sheep: 0.03, chicken: 0.04, zombie: 0.05 };
 const MAX_INSTANCES = 64;
+/** Kinds drawn as a silhouette when hidden by terrain. Only the threat: animals behind every
+ *  hill would clutter the view. */
+const XRAY: Partial<Record<Kind, number>> = { zombie: 0xff5a5a };
 
 export class Creatures {
   group = new THREE.Group();
   agentModel: AgentModel;
   agent: THREE.Group;
   private meshes: Record<Kind, THREE.InstancedMesh>;
+  private ghosts: Partial<Record<Kind, THREE.InstancedMesh>> = {};
   private dummy = new THREE.Object3D();
   private material: THREE.MeshLambertMaterial;
   private counts: Record<Kind, number> = { sheep: 0, chicken: 0, zombie: 0 };
@@ -89,6 +93,21 @@ export class Creatures {
       return m;
     };
     this.meshes = { sheep: make(sheepGeometry(), "sheep"), chicken: make(chickenGeometry(), "chickens"), zombie: make(zombieGeometry(), "zombies") };
+    for (const k of KINDS) {
+      const color = XRAY[k];
+      if (color === undefined) continue;
+      // Same geometry and the very same instance matrices as the real mesh, so it costs one
+      // draw call and no per-frame work beyond the count.
+      const main = this.meshes[k];
+      const ghost = new THREE.InstancedMesh(main.geometry, xrayMaterial(color), MAX_INSTANCES);
+      ghost.instanceMatrix = main.instanceMatrix;
+      ghost.count = 0;
+      ghost.frustumCulled = false;
+      ghost.renderOrder = 3;
+      ghost.name = `${main.name} x-ray`;
+      this.ghosts[k] = ghost;
+      this.group.add(ghost);
+    }
   }
 
   /** Start a new frame. Call setInstance for every creature, then endFrame. No allocation. */
@@ -120,6 +139,8 @@ export class Creatures {
         m.count = this.counts[k];
         m.instanceMatrix.needsUpdate = true;
       }
+      const g = this.ghosts[k];
+      if (g) g.count = this.counts[k];
     }
   }
 
@@ -132,6 +153,7 @@ export class Creatures {
 
   get drawCalls(): number {
     let n = this.agentModel.drawCalls;
+    for (const k of KINDS) if (this.ghosts[k] && this.counts[k] > 0) n++;
     for (const k of KINDS) if (this.counts[k] > 0) n++;
     return n;
   }

@@ -52,6 +52,7 @@ export class SceneView {
   private bodyYaw = 0;
   private povLook = new THREE.Vector3();
   private moving = 0;
+  private followTilt = 0;
   fx = new Effects();
   /** The action on screen this frame, for the panels. */
   act: ActionNow | null = null;
@@ -216,12 +217,46 @@ export class SceneView {
       this.povLook.lerp(this.tmp, Math.min(1, dt * 8));
       this.persp.lookAt(this.povLook);
     } else if (this.mode === "top") this.topControls.update(); else this.controls.update();
-    if (this.mode === "follow") this.followOffset.copy(this.persp.position).sub(this.controls.target);
+    if (this.mode === "follow") {
+      this.followOffset.copy(this.persp.position).sub(this.controls.target);
+      // If terrain hides the agent, tilt the camera up (same distance and direction) until it
+      // sees over it, toward looking straight down. Eased, for this frame only: the tilt is not
+      // baked into the offset, so the camera settles back once the view is clear.
+      this.followTilt += (this.neededTilt() - this.followTilt) * Math.min(1, dt * 5);
+      if (this.followTilt > 0.002) {
+        const o = this.followOffset, d = o.length();
+        const az = Math.atan2(o.x, o.z), el = Math.min(1.45, Math.asin(Math.max(-1, Math.min(1, o.y / d))) + this.followTilt);
+        this.persp.position.set(this.controls.target.x + d * Math.cos(el) * Math.sin(az),
+          this.controls.target.y + d * Math.sin(el), this.controls.target.z + d * Math.cos(el) * Math.cos(az));
+        this.persp.lookAt(this.controls.target);
+      }
+    }
     this.renderer.render(this.scene, this.camera);
     this.lastDrawCalls = this.renderer.info.render.calls;
   }
 
   get drawCalls(): number { return this.lastDrawCalls; }
+
+  /** Extra elevation (radians) the follow camera needs to see the agent over the terrain. */
+  private neededTilt(): number {
+    const run = this.run, t = this.controls.target, o = this.followOffset, d = o.length();
+    if (d < 0.1) return 0;
+    const az = Math.atan2(o.x, o.z), el0 = Math.asin(Math.max(-1, Math.min(1, o.y / d)));
+    const blocked = (el: number) => {
+      const cx = d * Math.cos(el) * Math.sin(az), cy = d * Math.sin(el), cz = d * Math.cos(el) * Math.cos(az);
+      for (let k = 2; k <= 16; k++) {                   // skip the agent's own cell
+        const u = k / 16;
+        const id = run.blockAt(Math.floor(t.x + cx * u), Math.floor(t.y + cy * u), Math.floor(t.z + cz * u));
+        if (id !== 0) {
+          const n = run.palette[id];
+          if (n !== "leaves" && n !== "water" && n !== "torch") return true;
+        }
+      }
+      return false;
+    };
+    for (let el = el0; el < 1.45; el += 0.06) if (!blocked(el)) return el - el0;
+    return 1.45 - el0;
+  }
 
   private placeActors(a: WorldState, b: WorldState, f: number, time: number, dt: number): void {
     const pa = a.agent.pos, pb = b.agent.pos;

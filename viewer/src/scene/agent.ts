@@ -2,7 +2,7 @@
 // when hurt. The view picks a pose for the current action; the model eases its joints toward it
 // so poses blend instead of snapping, and holds a short action for long enough to be seen.
 import * as THREE from "three";
-import { Builder } from "./builder";
+import { Builder, xrayMaterial } from "./builder";
 import { CREATURE_COLORS as C } from "./palette";
 
 export type PoseKind = "idle" | "walk" | "mine" | "place" | "craft" | "eat" | "attack" | "think";
@@ -68,9 +68,14 @@ export class AgentModel {
     // Own copy of the material, so the hurt flash does not tint the creatures.
     this.material = shared.clone();
     this.group.name = "agent";
+    // Every part carries a silhouette child, so the agent shows through terrain in a tunnel.
+    const xray = xrayMaterial(0x5b8cff, 0.55);
     const mesh = (g: THREE.BufferGeometry, m: THREE.Material = this.material) => {
       const x = new THREE.Mesh(g, m);
       x.castShadow = true;
+      const ghost = new THREE.Mesh(g, xray);
+      ghost.renderOrder = 3;
+      x.add(ghost);
       return x;
     };
     this.group.add(mesh(bodyGeometry()));
