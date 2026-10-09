@@ -1142,7 +1142,12 @@ class World:
         if self._beside(self.pos, where(), dy):
             yield
             return T.GOTO_ALREADY, True, desc
-        seen = {c["id"] for c in self.visible_creatures()}
+        # Unlike move, a creature merely coming into view does not end the walk: with animals about
+        # that ended 132 of 346 gotos early (runs/haiku_easy_plan_long_s153_5d). One coming close does.
+        def close_ids():
+            r = self.cfg.close_radius
+            return {c["id"] for c in self.creatures if cheb(c["pos"], self.pos) <= r and not (kind == "id" and c["id"] == what["id"])}
+        seen = close_ids()
         moved, why = 0, ""
         try:
             for _ in range(self.cfg.goto_max_steps):
@@ -1168,11 +1173,11 @@ class World:
                 if self._stop():
                     why = T.GOTO_HURT
                     break
-                now = {c["id"] for c in self.visible_creatures()}
+                now = close_ids()
                 if now - seen:
                     why = T.GOTO_NEW
                     break
-                seen |= now
+                seen = now
             else:
                 why = T.GOTO_LIMIT.format(n=self.cfg.goto_max_steps)
         finally:

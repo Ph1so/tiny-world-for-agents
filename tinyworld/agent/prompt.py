@@ -143,8 +143,8 @@ def action_lines(world) -> str:
     if c.long_actions:
         lines += [
             f'goto: {{"name": "goto", "x": X, "y": Y, "z": Z}} or {{"name": "goto", "id": ID}}  walk until you are beside '
-            f'that cell or creature, at most {c.goto_max_steps} steps; it stops early when you are hurt, when something '
-            f'new comes into view, or when there is no way on foot',
+            f'that cell or creature, at most {c.goto_max_steps} steps; it stops early when you are hurt, when a creature '
+            f'comes within {c.close_radius} cells, or when there is no way on foot',
             'any action may also carry "repeat": 2 to 8, to do it that many times in a row; it stops early when a '
             'try fails or you are hurt',
         ]

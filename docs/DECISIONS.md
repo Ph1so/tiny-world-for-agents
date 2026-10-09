@@ -685,8 +685,9 @@ as-is.
     chain without choosing the target. `goto` with x, y, z or with a creature's or agent's id walks,
     one world step per cell, until the agent is beside it (within 1 cell sideways, and within reach
     up or down): a shortest path over level steps, steps up one cell and safe falls, found again
-    every step. It ends when beside the target, hurt, something new comes into view (as move does),
-    another body is in the way, there is no way on foot (it first walks to the nearest cell it can
+    every step. It ends when beside the target, hurt, a creature other than the target comes within
+    close_radius (at first it ended, as move does, when anything new came into view: with animals
+    about that cut 132 of 346 gotos short), another body is in the way, there is no way on foot (it first walks to the nearest cell it can
     reach), the creature is gone, or after `goto_max_steps` (30). It never mines or builds.
     `"repeat": 2 to 8` on any action does it that many times in a row and stops after a try that
     fails or once the agent is hurt; the result is the last try that worked, with the count. Left

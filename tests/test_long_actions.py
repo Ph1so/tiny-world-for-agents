@@ -113,3 +113,17 @@ def test_goto_in_the_engine_runs_over_ticks():
             break
     assert out and out[0].valid and out[0].t_end > out[0].t_start and out[0].desc.startswith("goto (")
     assert b.pos != start
+
+
+def test_goto_keeps_walking_past_a_far_creature_and_stops_for_a_close_one():
+    w = long_world()
+    w.cfg.creatures.passive_move_prob = 0.0
+    w.creatures = [{"id": 7, "kind": "sheep", "pos": [38, 10, 40], "hp": 6, "cd": 0}]      # in view on the way, 8 cells off the line
+    r = w.step({"name": "goto", "x": 46, "y": 10, "z": 32})
+    assert "You are beside it" in r.text and w.pos[0] == 45
+    w = long_world()
+    w.cfg.creatures.passive_move_prob = 0.0
+    w.creatures = [{"id": 8, "kind": "sheep", "pos": [40, 10, 34], "hp": 6, "cd": 0}]      # 2 cells off the line
+    r = w.step({"name": "goto", "x": 46, "y": 10, "z": 32})
+    assert "Stopped: a creature came close." in r.text and w.pos[0] < 45
+    assert "comes within 3 cells" in action_lines(w)
