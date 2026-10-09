@@ -38,10 +38,10 @@ from pathlib import Path
 
 from tinyworld.analysis.replay import Grid, RunFiles, read_jsonl, replay_grid
 
-ACTIONS = ["move", "mine", "place", "craft", "eat", "attack", "wait", "store", "take", "drop"]
+ACTIONS = ["move", "mine", "place", "craft", "eat", "attack", "wait", "store", "take", "drop", "jump", "sleep"]
 TOOL_TIER = {"wood pickaxe": 1, "wood sword": 1, "stone pickaxe": 2, "stone sword": 2, "iron pickaxe": 3, "iron sword": 3,
              "iron helmet": 3, "iron chestplate": 3}
-DEATH_CAUSES = ["hunger", "drowning", "fall", "zombie"]
+DEATH_CAUSES = ["hunger", "drowning", "fall", "zombie", "hail"]
 ENTROPY_WINDOW = 50
 NEIGHBOURS_6 = [(1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1)]
 NEIGHBOURS_26 = [(dx, dy, dz) for dx in (-1, 0, 1) for dy in (-1, 0, 1) for dz in (-1, 0, 1)
@@ -186,6 +186,9 @@ def world_metrics(run: RunFiles) -> dict:
     for line, grid, changes in replay_grid(run):
         act = action_by_i.get(line.get("i"), {})
         target = (act.get("x"), act.get("y"), act.get("z")) if act.get("name") == "place" else None
+        if act.get("name") == "jump":                     # the block went under the feet: one below the new position
+            ax, ay, az = line["agent"]["pos"]
+            target = (ax, ay - 1, az)
         changed_set = False
         for x, y, z, before, after in changes:
             cell = (x, y, z)

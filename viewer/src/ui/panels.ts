@@ -25,11 +25,12 @@ export class StatusPanel {
   private bars = el("div", { class: "bars" });
   private inv = el("div", { class: "inventory" });
   private chests = el("div", { class: "chests" });
+  private roster = el("div", { class: "roster" });
   private barEls: Record<string, { fill: HTMLElement; label: HTMLElement }> = {};
   private lastInv = "";
 
   constructor() {
-    this.root.append(this.title, this.clock, this.bars, this.inv, this.chests);
+    this.root.append(this.title, this.clock, this.roster, this.bars, this.inv, this.chests);
     for (const [key, cls] of [["health", "health"], ["food", "food"], ["air", "air"]]) {
       const fill = el("div", { class: `fill ${cls}` });
       const label = el("span", { class: "bar-label" });
@@ -50,9 +51,15 @@ export class StatusPanel {
     this.lastClock = clockKey;
     this.title.textContent = `${m.runId}  ·  ${m.controller}${m.model ? " · " + m.model : ""}${m.memoryChars ? ` · memory ${m.memoryChars}` : ""}${m.names === "alien" ? " · alien" : ""}`;
     const inDay = t % m.dayLength;
-    this.clock.textContent = `day ${s.day}  ·  step ${t} / ${run.maxT}  ·  ${inDay}/${m.dayLength} ${s.light}  ·  agent step ${s.i}${status ? "  ·  " + status : ""}`;
+    this.clock.textContent = `day ${s.day}  ·  step ${t} / ${run.maxT}  ·  ${inDay}/${m.dayLength} ${s.light}${s.weather && s.weather !== "clear" ? "  ·  " + (s.weather === "storm" ? "⛈ storm" : "🌧 rain") : ""}  ·  agent step ${s.i}${status ? "  ·  " + status : ""}`;
     if (t === this.lastT) return;
     this.lastT = t;
+    clear(this.roster);
+    for (const g of s.agents ?? []) {
+      const me = g.id === run.primaryAgent;
+      this.roster.append(el("div", { class: `roster-row${me ? " me" : ""}${g.alive ? "" : " gone"}`,
+        text: `${me ? "▶ " : ""}${g.name ?? "agent"} #${g.id}  ♥${g.health} 🍗${g.food}${g.alive ? "" : "  ✝"}` }));
+    }
     const a = s.agent;
     const max = { health: 20, food: 20, air: 10 };
     for (const key of ["health", "food", "air"] as const) {
@@ -97,6 +104,7 @@ const SWATCHES: Record<string, string> = {
   sticks: "#c9a06e", coal: "#4f4b5c", "iron ingot": "#d8dce8", berries: "#d47f99", "raw meat": "#f0918f", "cooked meat": "#b86b4a",
   "wood pickaxe": "#b9915f", "stone pickaxe": "#9ea2b3", "iron pickaxe": "#e4e7f2", "wood sword": "#b9915f", "stone sword": "#9ea2b3", "iron sword": "#e4e7f2",
   "iron helmet": "#e4e7f2", "iron chestplate": "#e4e7f2", chest: "#b07a3e",
+  seeds: "#c8b46a", wheat: "#e8c95a", bread: "#d9a05b", wool: "#f4efe6", bed: "#d9675f",
 };
 export function swatch(name: string): string { return SWATCHES[name] ?? "#ccc"; }
 

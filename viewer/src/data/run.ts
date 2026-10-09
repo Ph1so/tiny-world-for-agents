@@ -1,7 +1,7 @@
 // One data model for replay and live mode. Lines are ingested in any order per file, but
 // each file in increasing step order. Everything the scene and panels read comes from here.
 import type {
-  AgentState, Creature, EventLine, FileName, MemoryLine, SnapshotLine, StepLine, WorldLine,
+  AgentEntry, AgentState, Creature, EventLine, FileName, MemoryLine, SnapshotLine, StepLine, WorldLine,
   WorldStepLine, ChestEntry } from "./types";
 
 export interface WorldState {
@@ -12,6 +12,9 @@ export interface WorldState {
   light: string;
   day: number;
   chests?: ChestEntry[];
+  weather?: string;
+  bed?: [number, number, number] | null;
+  agents?: AgentEntry[];
 }
 
 export interface RunMeta {
@@ -51,6 +54,13 @@ export class RunData {
   memory: MemoryLine[] = [];
   longterm: MemoryLine[] = [];
   events: EventLine[] = [];
+  /** Multi-agent runs: the agent the panels and camera follow (the first), and every agent's
+   *  steps and memory lines. The followed agent's also fill steps / stepByI / memory. */
+  primaryAgent: number | null = null;
+  stepsByAgent: Map<number, StepLine[]> = new Map();
+  memoryByAgent: Map<number, MemoryLine[]> = new Map();
+  /** "say" events, for speech bubbles. */
+  says: EventLine[] = [];
   /** Bumped on every ingested line, so consumers can poll cheaply. */
   version = 0;
   ready = false;
@@ -115,6 +125,11 @@ export class RunData {
       this.blocks = this.base.slice();
       this.blocksT = 0;
       this.state0 = null;
+      if (line.agents?.length) {
+        this.primaryAgent = line.agents[0].id;
+        for (const st of this.stepsByAgent.get(this.primaryAgent) ?? []) { this.steps.push(st); this.stepByI.set(st.i, st); }
+        for (const m of this.memoryByAgent.get(this.primaryAgent) ?? []) this.memory.push(m);
+      }
       this.ready = true;
       this.onReady?.();
       return;
@@ -124,16 +139,38 @@ export class RunData {
   }
 
   private ingestStep(line: StepLine): void {
+    if (line.agent != null) {
+      const list = this.stepsByAgent.get(line.agent) ?? [];
+      list.push(line);
+      this.stepsByAgent.set(line.agent, list);
+      if (line.agent !== this.primaryAgent) return;
+    }
     this.steps.push(line);
     this.stepByI.set(line.i, line);
   }
 
   private ingestMemory(line: MemoryLine): void {
+    if (line.agent != null) {
+      const list = this.memoryByAgent.get(line.agent) ?? [];
+      list.push(line);
+      this.memoryByAgent.set(line.agent, list);
+      if (line.agent !== this.primaryAgent) return;
+    }
     this.memory.push(line);
   }
 
   private ingestEvent(line: EventLine): void {
     this.events.push(line);
+    if (line.type === "say") this.says.push(line);
+  }
+
+  /** Multi-agent: the step an agent was on at world step t (its last step that started by t). */
+  agentStepAt(agent: number, t: number): StepLine | undefined {
+    const list = this.stepsByAgent.get(agent);
+    if (!list) return undefined;
+    let best: StepLine | undefined;
+    for (const s of list) { if (s.t_start <= t) best = s; else break; }
+    return best;
   }
 
   // ------------------------------------------------------------------ queries
@@ -158,7 +195,8 @@ export class RunData {
     if (t <= 0) {
       if (!this.state0) {
         const s = this.snapshot;
-        this.state0 = { t: 0, i: 0, agent: s.agent, creatures: s.creatures, light: s.light, day: s.day, chests: s.chests };
+        this.state0 = { t: 0, i: 0, agent: s.agent, creatures: s.creatures, light: s.light, day: s.day, chests: s.chests,
+                        weather: s.weather, bed: s.bed, agents: s.agents };
       }
       return this.state0;
     }

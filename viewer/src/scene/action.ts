@@ -36,10 +36,14 @@ export function actionAt(run: RunData, pt: number): ActionNow | null {
   const name = typeof a.name === "string" ? a.name : "";
   const dur = Math.max(1, rec.t_end - rec.t_start);
   const p = Math.min(1, Math.max(0, (pt - rec.t_start) / dur));
-  const x = num(a.x), y = num(a.y), z = num(a.z);
+  let x = num(a.x), y = num(a.y), z = num(a.z);
+  if (name === "jump") {                       // the cell it left, from "Placed dirt at (x, y, z)."
+    const m = rec.result.match(/Placed .+? at \((-?\d+), (-?\d+), (-?\d+)\)/);
+    [x, y, z] = m ? [Number(m[1]), Number(m[2]), Number(m[3])] : [null, null, null];
+  }
   return {
     rec, name, p, dur, done: p >= 1,
-    target: ["mine", "place", "store", "take"].includes(name) && x !== null && y !== null && z !== null ? [x, y, z] : null,
+    target: ["mine", "place", "store", "take", "jump"].includes(name) && x !== null && y !== null && z !== null ? [x, y, z] : null,
     creatureId: name === "attack" ? num(a.id) : null,
     item: typeof a.item === "string" ? a.item : firstItem(a.items),
   };
@@ -60,7 +64,7 @@ function itemsText(items: unknown): string {
 
 export const ACTION_ICON: Record<string, string> = {
   move: "🚶", mine: "⛏", place: "🧱", craft: "🔨", eat: "🍽", attack: "⚔", wait: "⏳",
-  store: "📦", take: "📦", drop: "🗑",
+  store: "📦", take: "📦", drop: "🗑", jump: "⤴", sleep: "💤", say: "💬", give: "🎁",
 };
 
 /** What the agent is doing, e.g. "⛏ mining stone". blockName is the block at the target now. */
@@ -81,6 +85,10 @@ export function actionVerb(act: ActionNow, blockName: string | null, creatureKin
     case "store": return `${icon} storing ${itemsText(a.items)} in chest`;
     case "take": return `${icon} taking ${itemsText(a.items)} from chest`;
     case "drop": return `${icon} dropping ${itemsText(a.items)}`;
+    case "jump": return `${icon} jumping, placing ${act.item ?? "block"} below`;
+    case "sleep": return `${icon} sleeping`;
+    case "say": return `${icon} talking`;
+    case "give": return `${icon} giving ${itemsText(a.items)} to #${String(a.id ?? "")}`;
     default: return `${icon} ${act.name || "unreadable reply"}`;
   }
 }
@@ -102,12 +110,20 @@ export function resultFloat(result: string): { text: string; ok: boolean } | nul
   if ((m = result.match(/^Made (\d+) (.+?)\./))) return { text: `+${m[1]} ${m[2]}`, ok: true };
   if ((m = result.match(/^Ate 1 (.+?)\./))) return { text: `ate ${m[1]}`, ok: true };
   if ((m = result.match(/^Placed (.+?) at/))) return { text: `−1 ${m[1]}`, ok: true };
+  if ((m = result.match(/^Moved up 1 cell\. Placed (.+?) at/))) return { text: `⤴ −1 ${m[1]}`, ok: true };
+  if ((m = result.match(/^Slept (\d+) step/))) return { text: `💤 ${m[1]} steps`, ok: true };
+  if (/^Said /.test(result)) return { text: / No one heard/.test(result) ? "💬 no one heard" : "💬", ok: true };
+  if ((m = result.match(/^Gave (.+) to /))) return { text: `🎁 ${m[1]}`, ok: true };
+  if (/^No agent #/.test(result)) return { text: "✖ no one there", ok: false };
+  if (/^You did not sleep/.test(result)) return { text: "✖ can't sleep", ok: false };
+  if (/^No \S.* within \d+ cells\.$/.test(result)) return { text: "✖ no bed near", ok: false };
   if (/It is gone\./.test(result)) return { text: "defeated!", ok: true };
   if (/^Hit /.test(result)) return { text: "hit!", ok: true };
   if (/^You did not move/.test(result)) return { text: "✖ blocked", ok: false };
   if (/did not break/.test(result)) return { text: "✖ won't break", ok: false };
   if (/^Nothing was made/.test(result)) return { text: "✖ nothing made", ok: false };
   if (/^Nothing is there/.test(result)) return { text: "✖ nothing there", ok: false };
+  if (/^You are in that cell/.test(result)) return { text: "✖ that's you", ok: false };
   if (/not empty/.test(result)) return { text: "✖ cell taken", ok: false };
   if (/^Too far/.test(result)) return { text: "✖ too far", ok: false };
   if (/^No such item|^Not enough/.test(result)) return { text: "✖ don't have it", ok: false };

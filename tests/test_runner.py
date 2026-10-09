@@ -49,10 +49,11 @@ def test_files_and_keys(full_run):
 
     w = rows(folder, "world")
     assert set(w[0]) >= {"type", "t", "size", "sea_level", "palette", "blocks_b64", "agent", "creatures",
-                         "light", "day", "display_names", "chests"}
+                         "light", "day", "display_names", "chests", "weather", "bed"}
     assert w[0]["type"] == "snapshot" and w[0]["size"] == [64, 32, 64] and w[0]["palette"] == BLOCKS
     assert [r["t"] for r in w[1:]] == list(range(1, world.t + 1))
-    assert all(set(r) == {"type", "t", "i", "blocks", "agent", "creatures", "chests", "light", "day"} for r in w[1:])
+    assert all(set(r) == {"type", "t", "i", "blocks", "agent", "creatures", "chests", "light", "day", "weather", "bed"}
+               for r in w[1:])
     assert set(w[1]["agent"]) == {"pos", "health", "food", "air", "inventory", "tools"}
 
     s = rows(folder, "steps")

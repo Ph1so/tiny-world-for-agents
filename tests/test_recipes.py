@@ -17,11 +17,12 @@ for r in BASE:
 
 
 def test_table_matches_the_plan():
-    assert len(BASE) == 17 and len(CASES) == 19
+    assert len(BASE) == 19 and len(CASES) == 21
     assert {r.output: r.count for r in BASE} == {
         "planks": 4, "sticks": 4, "workbench": 1, "door": 1, "wood pickaxe": 1, "stone pickaxe": 1,
         "stone sword": 1, "furnace": 1, "torch": 4, "cooked meat": 1, "iron ingot": 1,
-        "iron pickaxe": 1, "iron sword": 1, "wood sword": 1, "iron helmet": 1, "iron chestplate": 1, "chest": 1}
+        "iron pickaxe": 1, "iron sword": 1, "wood sword": 1, "iron helmet": 1, "iron chestplate": 1, "chest": 1,
+        "bread": 1, "bed": 1}
     assert all(r.output in defs.ITEMS for r in BASE)
 
 
@@ -34,7 +35,7 @@ def test_recipe(recipe, items):
         # Three cells away is not nearby. Nothing is made, nothing is used up, one step passes.
         w.set_block(35, 10, 32, recipe.station)
         r = w.step({"name": "craft", "items": items})
-        assert r.text == T.NOT_MADE and r.valid and r.steps == 1
+        assert r.text == T.NOT_MADE_STATION.format(station=recipe.station, r=2) and r.valid and r.steps == 1
         assert all(w.inv[k] == v + 1 for k, v in items.items())
         assert [e["type"] for e in r.events] == ["craft_fail"]
         w.set_block(34, 10, 32, recipe.station)
@@ -53,10 +54,33 @@ def test_failed_craft_keeps_items_and_costs_a_step(flat):
     flat._add("planks", 5)
     flat._add("sticks", 5)
     r = flat.step({"name": "craft", "items": {"planks": 1, "sticks": 1}})
-    assert r.text == T.NOT_MADE and r.steps == 1 and flat.inv == {"planks": 5, "sticks": 5}
+    assert r.text == T.NOT_MADE_EXACT and r.steps == 1 and flat.inv == {"planks": 5, "sticks": 5}
     assert r.events[0]["type"] == "craft_fail" and r.events[0]["detail"] == {"items": {"planks": 1, "sticks": 1}}
     # More than the exact amounts is not a match either.
-    assert flat.step({"name": "craft", "items": {"planks": 3}}).text == T.NOT_MADE
+    assert flat.step({"name": "craft", "items": {"planks": 3}}).text == T.NOT_MADE_EXACT
+
+
+def test_failed_craft_says_which_station_is_missing(flat):
+    flat._add("planks", 5)
+    flat._add("sticks", 5)
+    r = flat.step({"name": "craft", "items": {"planks": 3, "sticks": 2}})
+    assert r.text == "Nothing was made. No workbench within 2 cells." and r.valid
+    assert r.events[0]["type"] == "craft_fail"
+    flat.set_block(34, 10, 32, "workbench")
+    assert flat.step({"name": "craft", "items": {"planks": 3, "sticks": 2}}).text == "Made 1 wood pickaxe."
+
+
+def test_rule_notes_off_keeps_the_one_failure_line():
+    from conftest import flat_world
+    w = flat_world(rule_notes=False)
+    w._add("planks", 5)
+    w._add("sticks", 5)
+    for items in ({"planks": 1}, {"planks": 3, "sticks": 2}):
+        assert w.step({"name": "craft", "items": items}).text == T.NOT_MADE
+    w.step({"name": "craft", "items": {"planks": 2}})
+    w.health, w.food = 10, 5
+    obs = w.observe()
+    assert "things you have made" not in obs and "does not rise" not in obs
 
 
 def test_craft_with_missing_items_is_invalid(flat):

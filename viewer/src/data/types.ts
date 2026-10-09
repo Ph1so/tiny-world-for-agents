@@ -20,6 +20,14 @@ export interface Creature {
   pos: Vec3;
 }
 
+/** Multi-agent runs: one entry per agent in the snapshot and every step line. */
+export interface AgentEntry extends AgentState {
+  id: number;
+  name: string | null;
+  alive: boolean;
+  bed: Vec3 | null;
+}
+
 export interface SnapshotLine {
   type: "snapshot";
   t: 0;
@@ -34,6 +42,11 @@ export interface SnapshotLine {
   display_names: Record<string, string>;
   spawn: Vec3;
   chests?: ChestEntry[];
+  /** clear | rain | storm. Runs from before weather leave it out. */
+  weather?: string;
+  /** The respawn bed once slept in, else null. */
+  bed?: Vec3 | null;
+  agents?: AgentEntry[];
 }
 
 export interface WorldStepLine {
@@ -46,11 +59,16 @@ export interface WorldStepLine {
   light: string;
   day: number;
   chests?: ChestEntry[];
+  weather?: string;
+  bed?: Vec3 | null;
+  agents?: AgentEntry[];
 }
 
 export type WorldLine = SnapshotLine | WorldStepLine;
 
 export interface StepLine {
+  /** Multi-agent runs: whose step this is. */
+  agent?: number;
   i: number;
   t_start: number;
   t_end: number;
@@ -79,6 +97,7 @@ export interface MemoryOp {
 }
 
 export interface MemoryLine {
+  agent?: number;
   i: number;
   t: number;
   ops: MemoryOp[];

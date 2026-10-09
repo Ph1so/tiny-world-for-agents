@@ -95,10 +95,13 @@ class RunStore:
         except Exception:
             cfg = {}
         last = _read_last_line(p / "world.jsonl")
+        agents = cfg.get("agents") or []
+        multi = cfg.get("mode") == "multi"
         return {
             "run_id": p.name,
-            "controller": cfg.get("controller"),
-            "model": cfg.get("model"),
+            "controller": f"multi x{len(agents)} ({cfg.get('clock', 'realtime')})" if multi else cfg.get("controller"),
+            "model": ", ".join(dict.fromkeys(a.get("model") or a.get("controller") or "?" for a in agents)) if multi
+                     else cfg.get("model"),
             "memory_chars": cfg.get("memory_chars", 0),
             "seed": cfg.get("seed"),
             "names": cfg.get("names", "familiar"),

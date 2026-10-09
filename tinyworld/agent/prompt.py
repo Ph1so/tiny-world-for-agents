@@ -20,6 +20,11 @@ Reply with one JSON object and nothing else:
 MEMORY_PARAGRAPH = ("\nYour memory file holds at most {N} characters. You may edit it every step. "
                     "An edit that would go over the limit is rejected and the file stays as it was.\n")
 
+# Multi-agent intros, replacing the first line. Facts about time and company, nothing to do.
+INTRO_REALTIME = ("You are in a world. The world moves forward on its own clock, also while you are deciding. "
+                  "Other agents act in it at the same time.")
+INTRO_LOCKSTEP = ("You are in a world. The world moves forward each time you and the other agents in it act.")
+
 REPLY_WITH_MEMORY = '{"thought": "...", "memory": [...], "action": {...}}'
 REPLY_NO_MEMORY = '{"thought": "...", "action": {...}}'
 
@@ -35,7 +40,9 @@ LONGTERM_PARAGRAPH = ("\nYour long-term file holds at most {L} characters. It ca
 EDIT_OPS = ('\nAn edit is a list of ops: {{"op": "append", "text": "..."}} adds a line, '
             '{{"op": "replace", "old": "...", "new": "..."}} changes the first match, '
             '{{"op": "rewrite", "text": "..."}} replaces the whole file. In {fields} plain text is added '
-            'as a new line.\n')
+            'as a new line.{stamp}\n')
+# memory_plain "append" only: appended memory lines get the world step in front.
+STAMP_NOTE = ' A line added to the memory file starts with the step it was added at, like "[step 12] ".'
 LONGTERM_MEMORY_NOTE = " Your memory file starts empty in every run."
 REPLY_LONGTERM_MEMORY = '{"thought": "...", "memory": [...], "longterm": [...], "action": {...}}'
 REPLY_LONGTERM_ONLY = '{"thought": "...", "longterm": [...], "action": {...}}'
@@ -70,26 +77,77 @@ def action_lines(world) -> str:
         f'store: {{"name": "store", "x": X, "y": Y, "z": Z, "items": {ex_craft}}}  items from the inventory into a {chest} within {c.reach} cells',
         f'take: {{"name": "take", "x": X, "y": Y, "z": Z, "items": {ex_craft}}}  items from a {chest} within {c.reach} cells into the inventory',
         f'drop: {{"name": "drop", "items": {ex_craft}}}  items from the inventory, gone for good',
+        f'jump: {{"name": "jump", "item": {ex_place}}}  move up 1 cell and place an item from the inventory in the cell you left',
+        f'sleep: {{"name": "sleep"}}  with a {world.dn("bed")} within {c.reach} cells: the world moves on until dawn or until you are hurt',
     ]
+    if getattr(world, "multi", False):
+        lines[5] = f'attack: {{"name": "attack", "id": ID}}  a creature or agent within {c.attack_reach} cells'
+        lines += [
+            f'say: {{"name": "say", "text": "..."}}  agents within {c.hear_radius} cells hear it, up to {c.say_max_chars} characters',
+            f'give: {{"name": "give", "id": ID, "items": {ex_craft}}}  items from the inventory to an agent within {c.reach} cells',
+        ]
     return "\n".join(lines)
 
 
-def build_system_prompt(world, history_window: int, memory_chars: int, longterm_chars: int = 0) -> str:
+def book_lines(world) -> str:
+    """With recipe_book on, every craft in the world's table (shuffled and alien names included)."""
+    from tinyworld.sim import text as T
+    from tinyworld.sim.defs import FUELS
+    c = world.cfg
+
+    def count(item: str, n: int) -> str:
+        if item == "fuel":
+            return T.BOOK_FUEL.format(c=n, a=world.dn(FUELS[0]), b=world.dn(FUELS[1]))
+        return T.OBS_MADE_COUNT.format(c=n, name=world.dn(item))
+
+    lines = [T.BOOK_HEADER]
+    for r in world.recipes:
+        station = T.BOOK_STATION.format(station=world.dn(r.station), r=c.station_reach) if r.station else ""
+        lines.append(T.BOOK_LINE.format(inputs=" + ".join(count(i, n) for i, n in r.inputs),
+                                        output=count(r.output, r.count), station=station))
+    return "\n".join(lines)
+
+
+def _actions(world) -> str:
+    """The action lines, then the craft list when recipe_book is on (off: PLAN.md text unchanged)."""
+    if not world.cfg.recipe_book:
+        return action_lines(world)
+    return action_lines(world) + "\n\n" + book_lines(world)
+
+
+def build_system_prompt(world, history_window: int, memory_chars: int, longterm_chars: int = 0,
+                        memory_plain: str = "rewrite", intro: str | None = None, persona: str | None = None) -> str:
+    """intro replaces the first line (multi-agent); persona is added as a last paragraph."""
+    text = _system_prompt(world, history_window, memory_chars, longterm_chars, memory_plain)
+    if intro:
+        text = intro + text[text.index("\n"):]
+    if persona:
+        text += "\n\n" + persona
+    return text
+
+
+def _system_prompt(world, history_window: int, memory_chars: int, longterm_chars: int = 0,
+                   memory_plain: str = "rewrite") -> str:
+    """memory_plain "rewrite" with no long-term file is the PLAN.md section 7 prompt word for word.
+    "append" (plain memory text adds lines) spells the edit ops out, as the long-term file does."""
+    mem = memory_chars > 0
+    appends = mem and memory_plain == "append"
+    fields = " and ".join(f for f, on in (('"memory"', appends), ('"longterm"', longterm_chars > 0)) if on)
+    ops = EDIT_OPS.format(fields=fields, stamp=STAMP_NOTE if appends else "") if fields else ""
     if longterm_chars > 0:
-        mem = memory_chars > 0
         clause = ("your memory file, " if mem else "") + "your long-term file, "
         paragraph = (MEMORY_PARAGRAPH.format(N=memory_chars) if mem else "") + LONGTERM_PARAGRAPH.format(
             L=longterm_chars, memory_note=LONGTERM_MEMORY_NOTE if mem else "",
-            edit_like=", the same way as the memory file" if mem else "") + EDIT_OPS.format(fields='"longterm"')
+            edit_like=", the same way as the memory file" if mem else "") + ops
         return SYSTEM_TEMPLATE.format(memory_clause=clause, K=history_window, memory_paragraph=paragraph,
-                                      action_lines=action_lines(world),
+                                      action_lines=_actions(world),
                                       reply_line=REPLY_LONGTERM_MEMORY if mem else REPLY_LONGTERM_ONLY)
-    if memory_chars > 0:
+    if mem:
         return SYSTEM_TEMPLATE.format(memory_clause="your memory file, ", K=history_window,
-                                      memory_paragraph=MEMORY_PARAGRAPH.format(N=memory_chars),
-                                      action_lines=action_lines(world), reply_line=REPLY_WITH_MEMORY)
+                                      memory_paragraph=MEMORY_PARAGRAPH.format(N=memory_chars) + ops,
+                                      action_lines=_actions(world), reply_line=REPLY_WITH_MEMORY)
     return SYSTEM_TEMPLATE.format(memory_clause="", K=history_window, memory_paragraph="",
-                                  action_lines=action_lines(world), reply_line=REPLY_NO_MEMORY)
+                                  action_lines=_actions(world), reply_line=REPLY_NO_MEMORY)
 
 
 def build_user_message(memory_text: str | None, memory_limit: int, history: list[tuple[str, str]],

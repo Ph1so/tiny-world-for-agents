@@ -393,6 +393,7 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--config", default=None, help="world yaml, default configs/world.yaml")
     ap.add_argument("--names", choices=["familiar", "alien"], default=None)
     ap.add_argument("--shuffle-recipes", action="store_true", default=None)
+    ap.add_argument("--recipe-book", action="store_true", default=None, help="list every craft in the system prompt")
     ap.add_argument("--on-death", default=None)
     ap.add_argument("--resume", action="store_true")
     ap.add_argument("--lineage", default=None,
@@ -407,7 +408,7 @@ def main(argv: list[str] | None = None) -> None:
     # Precedence: CLI flag, then the run config file, then these defaults.
     opts = {"controller": "sensible_bot", "model": None, "models_file": None, "memory_chars": 2000,
             "history_window": 3, "max_tokens": None, "seed": 1, "max_steps": 1500, "run_id": None,
-            "runs_dir": "runs", "names": None, "shuffle_recipes": None, "on_death": None,
+            "runs_dir": "runs", "names": None, "shuffle_recipes": None, "recipe_book": None, "on_death": None,
             "lineage": None, "longterm_chars": 0, "lineages_dir": None}
     file_opts: dict = {}
     if args.run_config:
@@ -417,7 +418,7 @@ def main(argv: list[str] | None = None) -> None:
 
     world_path = resolve_world_path(args.config if args.config is not None else file_opts.get("world"))
     cfg = load_world_config(world_path, names=opts["names"], shuffle_recipes=opts["shuffle_recipes"],
-                            on_death=opts["on_death"])
+                            recipe_book=opts["recipe_book"], on_death=opts["on_death"])
     extra = None
     if opts["controller"] == "llm":
         if not opts["model"]:

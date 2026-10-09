@@ -8,6 +8,7 @@ import type { Vec3 } from "../data/types";
 import { actionAt, resultFloat, type ActionNow } from "./action";
 import type { PoseKind } from "./agent";
 import { Creatures } from "./creatures";
+import { OthersLayer } from "./others";
 import { Effects } from "./fx";
 import { BLOCK_COLORS } from "./palette";
 import { swatch } from "../ui/panels";
@@ -21,7 +22,7 @@ const DROP_COLOR: Record<string, number> = { "coal ore": 0x3d3a45, "berry bush":
 const FOOD_COLOR: Record<string, number> = { berries: 0xd8456b, "raw meat": 0xe8857c, "cooked meat": 0xa8643f };
 const PICK_TIER: Record<string, number> = { "wood pickaxe": 1, "stone pickaxe": 2, "iron pickaxe": 3 };
 const POSE: Record<string, PoseKind> = { mine: "mine", place: "place", craft: "craft", eat: "eat", attack: "attack",
-  store: "place", take: "place", drop: "place" };
+  store: "place", take: "place", drop: "place", jump: "place" };
 /** Colour of an item for the cube in hand or in flight. */
 const itemColor = (name: string): number => {
   if (FOOD_COLOR[name] !== undefined) return FOOD_COLOR[name];
@@ -42,6 +43,7 @@ export class SceneView {
   mode: CameraMode = "orbit";
   terrain: Terrain;
   creatures: Creatures;
+  others = new OthersLayer(new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }));
   sky: Sky | null = null;
   run: RunData;
   private timer = new THREE.Timer();
@@ -99,7 +101,7 @@ export class SceneView {
     this.topControls.screenSpacePanning = true;
     this.terrain = new Terrain(run);
     this.creatures = new Creatures();
-    this.scene.add(this.terrain.group, this.creatures.group, this.fx.group);
+    this.scene.add(this.terrain.group, this.creatures.group, this.fx.group, this.others.group);
     this.resize();
   }
 
@@ -192,11 +194,12 @@ export class SceneView {
     }
     const a = run.stateAt(t0), b = run.stateAt(t1) ?? a;
     if (a && b) this.placeActors(a, b, f, time, dt);
+    if (a && b && a.agents) this.others.update(run, a, b, f, time, dt, this.agentPos);
     this.animate(a, time, dt);
     if (this.sky && a) {
       const { dayLength, nightStart, dimSteps } = run.meta;
       const stepInDay = ((pt % dayLength) + dayLength) % dayLength;
-      this.sky.update(stepInDay, dayLength, nightStart, dimSteps, a.light, time);
+      this.sky.update(stepInDay, dayLength, nightStart, dimSteps, a.light, time, a.weather ?? "clear", dt);
       this.scene.background = this.sky.background;
     }
     if (this.mode === "follow") {

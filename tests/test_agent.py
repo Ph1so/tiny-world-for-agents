@@ -10,6 +10,7 @@ import yaml
 from tinyworld.agent.controller import LLMController, MEMORY_REJECTED, make_llm_controller
 from tinyworld.agent.memory import MemoryFile
 from tinyworld.agent.parser import UNREADABLE, WAIT_ONE, parse_reply
+from tinyworld.agent.prompt import build_system_prompt
 from tinyworld.llm import ModelSpec, get_model
 from tinyworld.llm.mock import MockClient, SensibleMockClient
 from tinyworld.runner.run import run
@@ -101,9 +102,11 @@ def test_parse_odd_shapes():
 # ----------------------------------------------------------------- controller, one step at a time
 
 
-def controller(script, memory_chars=50, history_window=3, on_death="respawn_keep_memory"):
+def controller(script, memory_chars=50, history_window=3, on_death="respawn_keep_memory", memory_plain="rewrite"):
+    """memory_plain "rewrite" (the first runs' snapshot coercion) unless a test asks for append."""
     spec = ModelSpec(provider="mock", model="m", input_per_m=1.0, output_per_m=2.0)
-    return LLMController(MockClient(script, input_tokens=1000, output_tokens=500), spec, memory_chars, history_window, on_death)
+    return LLMController(MockClient(script, input_tokens=1000, output_tokens=500), spec, memory_chars, history_window, on_death,
+                         memory_plain=memory_plain)
 
 
 def test_one_step_fields_and_cost():
@@ -237,14 +240,16 @@ def test_full_mock_run_logs_every_file(mock_run):
     assert {e["i"] for e in rej_events} == {m["i"] for m in rejected}
     for e in rej_events:
         assert e["t"] == by_i[e["i"]]["t_start"]
-        assert MEMORY_REJECTED.format(n=e["detail"]["over_by"]) in by_i[e["i"] + 1]["observation"]
+        if e["i"] + 1 in by_i:                                  # the run may end on this step
+            assert MEMORY_REJECTED.format(n=e["detail"]["over_by"]) in by_i[e["i"] + 1]["observation"]
 
     fails = [s for s in steps if not s["parse_ok"]]
     assert fails, "the mock sends unreadable replies, some must be counted"
     assert len([e for e in events if e["type"] == "parse_fail"]) == len(fails)
     for s in fails:
         assert s["action"] == WAIT_ONE and s["t_end"] - s["t_start"] == 1
-        assert UNREADABLE in by_i[s["i"] + 1]["observation"]
+        if s["i"] + 1 in by_i:
+            assert UNREADABLE in by_i[s["i"] + 1]["observation"]
 
     assert world.firsts["craft"], "the sensible mock made progress"
 
@@ -352,3 +357,45 @@ def test_list_of_strings_memory_actually_lands_in_file():
     mf = MemoryFile(limit=2000)
     res = mf.apply(p.memory_ops, step=1)
     assert res.accepted and mf.text == "Start (1,2,3)\nPlan: gather"
+
+
+# ------------------------------------------------------------------ memory_plain append
+
+def test_append_mode_adds_stamped_lines_and_skips_repeats():
+    """runs/haiku_4nights_g2 rewrote its memory 846 times in 866 edits; a line lived 1.6 steps.
+    In append mode plain lines are added with the world step in front, and a resent line is skipped."""
+    w = flat_world()
+    reply = lambda lines: json.dumps({"memory": lines, "action": {"name": "wait", "steps": 4}})
+    c = controller([reply(["food 20", "sheep at (40,18,24)"]), reply(["food 20", "sheep at (40,18,24)", "food 19"])],
+                   memory_chars=200, memory_plain="append")
+    c.act(w.observe(), w)
+    w.step({"name": "wait", "steps": 4})
+    assert c.memory.text == "[step 0] food 20\n[step 0] sheep at (40,18,24)"
+    c.act(w.observe(), w)
+    assert c.memory.text == "[step 0] food 20\n[step 0] sheep at (40,18,24)\n[step 4] food 19"
+
+
+def test_append_mode_keeps_explicit_ops():
+    w = flat_world()
+    c = controller([json.dumps({"memory": [{"op": "rewrite", "text": "plan: dig in"}], "action": {"name": "wait"}})],
+                   memory_chars=200, memory_plain="append")
+    c.act(w.observe(), w)
+    assert c.memory.text == "plan: dig in"
+
+
+def test_memory_rejection_near_full_says_how_to_make_room():
+    w = flat_world()
+    c = controller([json.dumps({"memory": ["x" * 45], "action": {"name": "wait"}}),
+                    json.dumps({"memory": ["y" * 20], "action": {"name": "wait"}})], memory_chars=60, memory_plain="append")
+    c.act(w.observe(), w)
+    c.act(w.observe(), w)
+    assert "The memory file has 6 of 60 characters free." in w.observe()
+
+
+def test_prompt_spells_out_ops_and_stamps_in_append_mode():
+    w = flat_world()
+    p = build_system_prompt(w, 3, 2000, 0, "append")
+    assert 'In "memory" plain text is added as a new line.' in p and '"[step 12] "' in p
+    assert build_system_prompt(w, 3, 2000, 0, "rewrite") == build_system_prompt(w, 3, 2000)
+    both = build_system_prompt(w, 3, 2000, 800, "append")
+    assert 'In "memory" and "longterm" plain text is added as a new line.' in both

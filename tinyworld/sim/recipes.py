@@ -45,11 +45,17 @@ BASE: list[Recipe] = [
     _r({"iron ingot": 5}, "iron chestplate", 1, "workbench"),
     _r({"raw meat": 1, "fuel": 1}, "cooked meat", 1, "furnace"),
     _r({"iron ore": 1, "fuel": 1}, "iron ingot", 1, "furnace"),
+    _r({"wheat": 3}, "bread"),
+    _r({"wool": 3, "planks": 3}, "bed", 1, "workbench"),
 ]
+
+# Kept out of the shuffle: wheat takes a crop's growing time and wool a sheep each, so swapped
+# onto planks or a pickaxe they would hold up everything after it. The other 17 shuffle as before.
+UNSHUFFLED = {"bread", "bed"}
 
 # Things that can be had with bare hands, with any pickaxe, and with a stone or iron pickaxe.
 RAW_BY_TIER: list[list[str]] = [
-    ["log", "grass", "dirt", "sand", "leaves", "berries", "raw meat"],
+    ["log", "grass", "dirt", "sand", "leaves", "berries", "raw meat", "seeds", "wheat", "wool"],
     ["stone", "coal"],
     ["iron ore"],
 ]
@@ -83,14 +89,15 @@ def all_reachable(recipes: list[Recipe]) -> bool:
 
 
 def build_recipes(shuffle: bool, seed: int) -> list[Recipe]:
-    """The base table, or a seeded shuffle of input sets among recipes of the same tier."""
+    """The base table, or a seeded shuffle of input sets among recipes of the same tier
+    (bread and bed keep theirs)."""
     if not shuffle:
         return list(BASE)
     rng = np.random.default_rng([int(seed), 0x5EC1])
     for _ in range(500):
         out: list[Recipe] = list(BASE)
         for tier in (0, 1, 2):
-            idx = [i for i, r in enumerate(BASE) if r.tier == tier]
+            idx = [i for i, r in enumerate(BASE) if r.tier == tier and r.output not in UNSHUFFLED]
             perm = [idx[int(j)] for j in rng.permutation(len(idx))]
             for i, j in zip(idx, perm):
                 out[i] = Recipe(BASE[j].inputs, BASE[i].output, BASE[i].count, BASE[i].station)

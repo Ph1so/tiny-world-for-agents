@@ -93,6 +93,7 @@ def _break_world(wall: str) -> World:
     w.blocks[:] = defs.ID["air"]
     w.blocks[:10] = defs.ID["grass"]
     w.pos = [32, 10, 32]
+    w.t = 210                                                   # night: a zombie in the open stays
     w.creatures = []
     w._next_id = 1
     w.set_block(33, 10, 32, wall)                               # a 2-high wall just east of the agent

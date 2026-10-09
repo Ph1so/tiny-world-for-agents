@@ -34,6 +34,7 @@ export function fmtAction(action: Record<string, unknown> & { name: string }, re
       return `craft ${Object.entries(items).map(([k, v]) => `${rename(k)} x${v}`).join(" + ")}`;
     }
     case "eat": return `eat ${rename(String(a.item))}`;
+    case "jump": return `jump, ${rename(String(a.item))} below`;
     case "attack": return `attack #${a.id}`;
     case "wait": return `wait ${a.steps}`;
     case "store":
@@ -45,13 +46,22 @@ export function fmtAction(action: Record<string, unknown> & { name: string }, re
       const items = (a.items ?? {}) as Record<string, number>;
       return `drop ${Object.entries(items).map(([k, v]) => `${rename(k)} x${v}`).join(" + ")}`;
     }
+    case "say": return `say "${String(a.text ?? "")}"`;
+    case "give": return `give #${a.id}: ${Object.entries((a.items ?? {}) as Record<string, number>).map(([k, v]) => `${rename(k)} x${v}`).join(" + ")}`;
     default: return JSON.stringify(a);
   }
 }
 
 export function fmtEvent(e: { type: string; detail: Record<string, unknown> }, rename: (n: string) => string): string {
   const d = e.detail ?? {};
+  const who = d.agent != null ? `#${d.agent} ` : "";
+  return who + eventBody(e, d, rename);
+}
+
+function eventBody(e: { type: string }, d: Record<string, unknown>, rename: (n: string) => string): string {
   switch (e.type) {
+    case "say": return `said "${String(d.text)}"`;
+    case "give": return `gave ${Object.entries((d.items ?? {}) as Record<string, number>).map(([k, v]) => `${rename(k)} x${v}`).join(", ")} to #${d.to}`;
     case "first_mine": return `first mined ${rename(String(d.block))}`;
     case "first_place": return `first placed ${rename(String(d.block))}`;
     case "first_craft": return `first crafted ${rename(String(d.item))}`;
@@ -68,6 +78,8 @@ export function fmtEvent(e: { type: string; detail: Record<string, unknown> }, r
     case "night_start": return `night falls (day ${d.day})`;
     case "day_start": return `sunrise (day ${d.day})`;
     case "tool_broke": return `${rename(String(d.tool))} broke`;
+    case "weather": return d.weather === "clear" ? "the sky clears" : d.weather === "storm" ? "a storm starts" : "rain starts";
+    case "sleep": return `slept in the ${rename("bed")}`;
     case "memory_rejected": return `memory edit rejected`;
     case "parse_fail": return `reply could not be read`;
     default: return `${e.type} ${JSON.stringify(d)}`;
@@ -77,5 +89,5 @@ export function fmtEvent(e: { type: string; detail: Record<string, unknown> }, r
 export const EVENT_ICON: Record<string, string> = {
   first_mine: "⛏", first_place: "🧱", first_craft: "🔨", first_eat: "🍓", craft_fail: "✖", death: "💀",
   respawn: "✨", kill: "⚔", hurt: "💢", night_start: "🌙", day_start: "☀", tool_broke: "💥",
-  memory_rejected: "🚫", parse_fail: "❓", stuck: "⛓",
+  memory_rejected: "🚫", parse_fail: "❓", stuck: "⛓", weather: "🌧", sleep: "💤", say: "💬", give: "🎁",
 };

@@ -1,8 +1,10 @@
 """Every sentence the simulation can show the agent. Kept in one place so tests can scan it.
 
-Wording rule: say what happened. Never say why, and never say what to do. One exception:
-NOT_MOVED_DRY states the rule for moving up and down, because without it a model can repeat a
-failing "move up" for hundreds of steps without any way to tell why (see DECISIONS.md).
+Wording rule: say what happened. Never say why, and never say what to do. Exceptions, each
+because a model could not tell why from what it saw (see DECISIONS.md): NOT_MOVED_DRY states the
+rule for moving up and down, and with rule_notes on, NOT_MADE_EXACT, NOT_MADE_STATION,
+OBS_NO_HEAL, NOT_PLANTED and OBS_WET_RULE say why a craft or planting failed, or why health is
+not rising or food is falling fast.
 """
 
 MOVED = "Moved {n} {cells} {dir}."
@@ -19,14 +21,18 @@ TOOL_BROKE = " The {tool} broke."
 PLACED = "Placed {item} at ({x}, {y}, {z})."
 NOT_PLACED = "The {item} was not placed."
 NOT_EMPTY = "The cell is not empty."
+IN_YOUR_CELL = "You are in that cell."
 MADE = "Made {n} {item}."
 NOT_MADE = "Nothing was made."
+NOT_MADE_EXACT = "Nothing was made. Nothing is made from exactly these items and amounts."
+NOT_MADE_STATION = "Nothing was made. No {station} within {r} cells."
 ATE = "Ate 1 {item}."
 NOT_EATEN = "The {item} was not eaten."
 HIT = "Hit {kind} #{id}."
 HIT_GONE = "Hit {kind} #{id}. It is gone."
 NO_CREATURE = "No creature #{id} within reach."
 WAITED = "Waited {n} {steps}."
+HIT_YOU = " {kind} #{id} at ({x}, {y}, {z}) hit you."
 NO_ITEM = "No such item in inventory."
 NOT_ENOUGH = "Not enough {item} in inventory."
 UNKNOWN_ACTION = "Unknown action."
@@ -42,17 +48,57 @@ NOT_STORED = "The {item} was not stored."
 STORED = "Stored {items}."
 TOOK = "Took {items}."
 DROPPED = "Dropped {items}."
+JUMPED = "Moved up 1 cell. Placed {item} at ({x}, {y}, {z})."
+NOT_PLANTED = "The {item} was not placed. It needs {soil} under it and {water} within {r} cells."
+HAIL_HIT = " Hail hit you."
+NO_BED = "No {bed} within {r} cells."
+NOT_SLEPT_SKY = "You did not sleep. The sky is bright."
+NOT_SLEPT_CREATURE = "You did not sleep. {kind} #{id} is at ({x}, {y}, {z})."
+SLEPT = "Slept {n} {steps}. Your respawn point is the {bed} at ({x}, {y}, {z})."
+CUT_SHORT = " Cut short by your next action."
+SAID = 'Said "{text}".'
+HEARD_BY = " Heard by {who}."
+HEARD_BY_NONE = " No one heard it."
+AGENT_REF = "agent #{id}"
+GAVE = "Gave {items} to agent #{id}."
+NO_AGENT = "No agent #{id} within {r} cells."
+NO_ROOM_THEIRS = "No room in the inventory of agent #{id}."
 
 DIED_RESPAWN = "You died. Cause: {cause}. You are back at the starting point. Your items are gone."
+DIED_RESPAWN_BED = ("You died. Cause: {cause}. You are back beside your {bed} at ({x}, {y}, {z}). "
+                    "Your items are gone.")
 DIED_END = "You died. Cause: {cause}."
 
-OBS_HEADER = "step {t} | day {day} | light {light}"
-OBS_POSITION = "position ({x}, {y}, {z})"
+OBS_HEADER = "step {t} | day {day} | light {light} | sky {sky}"
+OBS_WEATHER = " | weather {weather}"
+OBS_WET = "{what} is falling on you"
+OBS_WET_RULE = "while rain falls on you, food drops {m} times as fast and health does not rise"
+OBS_RESPAWN = "respawn point: {bed} at ({x},{y},{z})"
+OBS_SELF = "you are agent #{id}"
+OBS_HEARD = "since you last looked:"
+OBS_SAID = '  agent #{id} at ({x},{y},{z}) said: "{text}"'
+OBS_GIVEN = "  agent #{id} at ({x},{y},{z}) gave you {items}"
+OBS_POSITION = "position ({x}, {y}, {z}), head at ({x}, {hy}, {z})"
+OBS_OPEN_BESIDE = "open cells touching you: {cells}"
+OBS_OPEN_BESIDE_ONE = "{where} ({x},{y},{z})"
+OBS_OPEN_BESIDE_ALL = "all 9 (4 sides at feet and at head level, and above the head)"
+OBS_OPEN_BESIDE_NONE = "none"
 OBS_VITALS = "health {h}/{hm} | food {f}/{fm} | air {a}/{am}"
+OBS_VITALS_BEFORE = "health {h}/{hm} ({h0} at step {t0}) | food {f}/{fm} ({f0} at step {t0}) | air {a}/{am}"
+OBS_NO_HEAL = "health does not rise while food is under {n}"
+OBS_MADE = "things you have made: {items}"
+OBS_MADE_ONE = "{inputs} -> {output}"
+OBS_MADE_COUNT = "{c} {name}"
 OBS_INVENTORY = "inventory: {items}"
 OBS_INVENTORY_SLOTS = "inventory ({used} of {limit} slots): {items}"
 OBS_CHEST = "  {chest} at ({x},{y},{z}) holds: {items}"
 OBS_EMPTY = "empty"
+
+# recipe_book: the whole craft table, shown once in the system prompt.
+BOOK_HEADER = "Everything that can be made with craft:"
+BOOK_LINE = "{inputs} -> {output}{station}"
+BOOK_STATION = " (with a {station} within {r} cells)"
+BOOK_FUEL = "{c} {a} or {b}"
 OBS_USES = "{name} ({n} uses left)"
 OBS_USES_MANY = "{name} x{c} ({n} uses left)"
 OBS_COUNT = "{name} x{c}"

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from tinyworld.agent.controller import LONGTERM_REJECTED, make_llm_controller
+from tinyworld.agent.controller import LONGTERM_REJECTED, LONGTERM_ROOM, make_llm_controller
 from tinyworld.agent.lineage import Lineage, LineageError
 from tinyworld.agent.parser import parse_reflection, parse_reply
 from tinyworld.agent.prompt import build_system_prompt, build_user_message
@@ -138,6 +138,30 @@ def test_finish_makes_one_reflection_call():
     system, user, _ = c.client.calls[-1]
     assert "The run is over." in user and "long-term file (1 of 50 characters used)" in user
     assert controller([], longterm=0).finish(w) is None
+
+
+def test_a_rejection_near_the_limit_says_how_to_make_room():
+    """runs/haiku_4nights_g2: with the file near full the agent kept appending (182 rejections)."""
+    w = world()
+    append = '{"memory": [], "longterm": ["' + "y" * 20 + '"], "action": {"name": "wait", "steps": 1}}'
+    c = controller([append], longterm=50, start="x" * 45)
+    c.act(w.observe(), w)
+    assert LONGTERM_ROOM.format(free=5, limit=50) in w.observe()
+    roomy = controller([append.replace("y" * 20, "y" * 60)], longterm=50, start="x")
+    roomy.act(w.observe(), w)
+    assert "characters free" not in w.observe()
+    assert not any(re.search(rf"\b{b}", LONGTERM_ROOM, re.I) for b in BANNED)
+
+
+def test_a_rejected_reflection_gets_one_more_try():
+    w = world()
+    c = controller(['{"thought": "all of it", "longterm": ["' + "z" * 80 + '"]}',
+                    '{"thought": "shorter", "longterm": [{"op": "rewrite", "text": "zombies at night"}]}'], start="a" * 40)
+    rec = c.finish(w)
+    assert rec["accepted"] and rec["attempts"] == 2 and c.longterm.text == "zombies at night"
+    assert "z" * 80 in rec["first_raw_reply"] and c.rejected_longterm == 1
+    _, retry, _ = c.client.calls[-1]
+    assert "Long-term edit rejected." in retry and "characters free" in retry
 
 
 # ------------------------------------------------------------------ lineages and runs

@@ -19,7 +19,7 @@ Calls made while building M1 and M2 with nobody to ask. Each one can be changed.
 13. **Berry bushes.** Breaking a bush gives 2 berries and removes the block. It comes back in the same cell after 150 steps. There is no berry bush item and no coal ore item (coal ore gives coal). So "every minable block as an item" has these two exceptions.
 14. **Grass gives a grass item**, not dirt.
 15. **Place** works into an air or water cell within 3 cells, with no need for a block next to it.
-16. **Craft** needs the exact amounts of one recipe. A wrong set, wrong amounts, or a missing workbench or furnace all give the same line, "Nothing was made.", cost one step, and count as a valid action with a `craft_fail` event. Naming items that are not in the inventory is an invalid action.
+16. **Craft** needs the exact amounts of one recipe. A wrong set, wrong amounts, or a missing workbench or furnace all give the same line, "Nothing was made." (with `rule_notes` off; see 109), cost one step, and count as a valid action with a `craft_fail` event. Naming items that are not in the inventory is an invalid action.
 17. **Eating something that is not food** costs one step, keeps the item, and is a valid action.
 18. **Distances are box distances** (the largest of the x, y, z differences) from the feet cell, for reach, attack, "nearby", "close", and "in view".
 19. **Respawn** resets health, food, and air to full. If the start cell has been built over, the agent appears on top.
@@ -300,3 +300,155 @@ as-is.
     was resumed from world step 808 with its long-term file restored to the version after agent
     step 240; the restore is a line marked "manual" in its longterm.jsonl and its config.yaml has
     a note, so the change mid-run is on record.
+102. **Chase range 20 -> 15.** With zombies spawning 12-24 cells away, a range of 20 put about
+    60% of them on the agent the moment they appeared, so a night felt like one wave. At 15
+    about 20% chase from the start and the rest wander until they come close. Hard mode
+    follows. Still well above the original 10, where none ever arrived.
+103. **Long-term rejections say how to make room; the reflection gets a second try.** In
+    runs/haiku_4nights_g2, after the fix in 101, the agent only ever added lines: its long-term
+    file sat at the 1200 limit and 182 edits were rejected. Its end-of-run reflection resent
+    the whole file plus a lesson, was rejected, and left nothing new. A long-term rejection now
+    adds, when under a quarter of the file is free, how many characters are free and that
+    append makes the file longer while replace with shorter text or rewrite can make it
+    shorter (mechanical wording only). A rejected reflection gets one more call with that
+    notice; its longterm.jsonl line keeps both replies (`attempts`, `first_raw_reply`). The
+    lineage haiku_4nights was also edited by hand before generation 3: the line "FOOD IS THE
+    KILLER (runs 1-12 starved)" was wrong (7 of 8 deaths were zombies at night), and
+    per-life notes were folded in, 1200 -> 947 characters. The edit is recorded in
+    lineages/haiku_4nights/manual_edits.jsonl.
+104. **The agent's head is shown; placing into itself and being hit say so.** In
+    runs/haiku_4nights_g2 the agent sealed the four cells beside its feet, tried to place a
+    block in its own head cell, got "The cell is not empty.", took that as a solid roof, and
+    was killed by a zombie standing beside its head (agent steps 398 and 543). 19 of its 26
+    "not empty" placements were into its own body. Nothing it saw said it is two cells tall.
+    Three changes, all facts about what happened, no advice: the position line now reads
+    "position (x, y, z), head at (x, y+1, z)" (PLAN.md section 6 showed the position alone);
+    placing into the agent's own cells answers "You are in that cell."; and every zombie hit
+    adds " Zombie #N at (x, y, z) hit you." to that step's result, so a wait cut short or a
+    death says what did it and from where.
+105. **Memory lines accumulate with step stamps; the observation shows health and food
+    earlier.** In runs/haiku_4nights_g2, 846 of 866 memory edits were whole-file rewrites (the
+    snapshot coercion of 85) and a memory line lived 1.6 steps on average, while the file used
+    377 of 2000 characters. Each step the agent re-summarised the screen, so nothing built up
+    and it never saw food fall (1 per 15 steps) in time to act on it. Three changes:
+    `memory_plain: append` (the new default; `rewrite` keeps 85) reads plain "memory" text as
+    added lines, like "longterm"; a line that is already in the file is skipped, so a model that
+    resends its notes does not double them; and each added line starts with "[step t] ", the
+    world step it was written at. The prompt in append mode spells out the three ops and the
+    stamp (rewrite mode with no long-term file is still PLAN.md section 7 word for word). A
+    memory rejection with under a quarter free also says how much is free and what shortens the
+    file, as for the long-term file (103). The observation's vitals line now reads "health
+    20/20 (20 at step 820) | food 12/20 (16 at step 820) | air 10/10": the values
+    `vitals_lookback` (60) world steps ago, or at the last respawn if that is later. Configs
+    without `memory_plain` (runs started before this) resume in append mode.
+106. **Jump action.** `{"name": "jump", "item": "dirt"}` moves the agent up one cell and puts
+    the item in the cell its feet left, so it stands on it: repeated, it builds a pillar to
+    climb. Before this, going up on land meant cutting stairs; "move up" only works in water.
+    It takes one world step like place. It needs the item in the inventory, an item that can
+    be stood on (not a torch: "The torch was not placed."), and the cell above the head free
+    of blocks and creatures ("You did not move. Blocked by stone at (x,y,z)."). The result is
+    "Moved up 1 cell. Placed dirt at (x, y, z)." A chest placed this way is a chest. It counts
+    as a placement in metrics (blocks_placed, first_place) and has its own share_jump.
+    valid_actions offers it, so the random bot uses it; the sensible bot does not.
+107. **Under a roof it is dark at any hour; zombies spawn in the dark.** Before this, zombies
+    came only at night, only on the surface and 12-24 cells away, while a torch only stopped
+    spawns within 6 cells of itself, so a torch could never matter and no Haiku run ever tried
+    coal + sticks. Now a cell with a block above the head (solid, not leaves) is dark day and
+    night unless a torch is within torch_light, and the agent's light line says so. Each step,
+    with zombie_dark_spawn_prob (0.05), a zombie can appear in a covered, unlit open cell (two
+    free cells over a floor) 5 to 24 cells away sideways (zombie_dark_min_dist), at any hour;
+    in practice those are the agent's own tunnels and shafts, since the terrain has no caves.
+    A torch within max(torch_radius, torch_light) of the cell stops it. By day, zombies out
+    under the open sky are removed every step (before, all zombies went at dawn); covered ones
+    stay. The night surface spawns are unchanged. Sensible bot, seeds 1-6, 1200 steps: zombie
+    hits 1 -> 4, no deaths either way.
+108. **Sky reading, open cells touching the body, fewer dark spawns.** From
+    runs/haiku_fresh_s2_v2 (the first run under 107): (a) inside a roofed shelter the light
+    read "dark" all day and the agent, using light as its clock, waited about 550 daytime world
+    steps for a daylight that never came. The header now also gives the sky by time of day:
+    "step 1641 | day 6 | light dark | sky bright". (b) Three of its five deaths were zombies
+    beside its head while it believed it was sealed in, even with "head at" and "hit you"
+    lines. A new line names every non-solid cell a zombie could hit it from (four sides at feet
+    level and at head level, and above the head): "open cells touching you: head north
+    (19,15,46)", or "all 9 (...)" in the open, or "none" when sealed. (c) 99 of its 159
+    zombies came from covered cells, 71 by day: zombie_dark_spawn_prob 0.05 -> 0.015. The
+    alien-shuffle bot test on seed 4 now needs 2100 steps instead of 1500 to make all 17
+    things (no deaths; the changed spawn draws shift its world).
+109. **rule_notes: why a craft failed, why health is flat, and what was made.** From
+    runs/haiku_fresh_s2_v3 (seed 2, about 1000 steps in): (a) health sat at exactly 10 for about
+    450 steps while food stayed 5 to 14, under heal_food_min 15; the agent kept "resting to
+    regenerate" and noted the flat health without ever linking it to food. (b) Every failed craft
+    read "Nothing was made.", so it concluded "crafts need a workbench nearby" when the real cause
+    was the amounts (log x2 instead of log x1), and it guessed distance only by luck. (c) It found
+    the wood and stone pickaxe items once each, never wrote them down, lost the iron smelting line
+    to its own memory rewrites, and after dying redid every trial. `rule_notes` (on by default,
+    one flag in world.yaml) breaks the wording rule in three places, as NOT_MOVED_DRY does:
+    a craft that matches nothing reads "Nothing was made. Nothing is made from exactly these items
+    and amounts."; one that matches but lacks its station reads "Nothing was made. No workbench
+    within 2 cells." (this does tell the agent the set was right); and while health is under max
+    and food under heal_food_min the observation adds "health does not rise while food is under
+    15". The observation also lists, after the inventory, each thing made so far with the items
+    it was first made from: "things you have made: log -> 4 planks; 3 planks + 2 sticks -> wood
+    pickaxe". This is a record of what happened, not of anything unseen, and it survives death
+    like the memory file (it is cleared with respawn_wipe_memory). With all 17 things made the
+    line is about 500 characters, so the observation size test measures it on its own. Set
+    `rule_notes: false` to compare with runs before this.
+110. **recipe_book: the whole craft table in the system prompt (off by default).** In
+    runs/haiku_4nights the agent tried to craft only 34 times in 1200 steps, every attempt a
+    Minecraft recipe, and never made an ingot, a sword or armor. `recipe_book: true` adds one
+    line per craft after the action lines: "3 iron ingot -> 1 iron helmet (with a workbench
+    within 2 cells)", with "1 coal or planks" for fuel. It is built from world.recipes and the
+    display names, so it is correct with alien names and shuffled recipes. It says how each
+    thing is made, never what it does (sword damage, armor, food values stay unlisted), so in
+    alien mode the agent still has to find out which word is armor. It sits in the system
+    prompt, not the observation, because it never changes within a run and stays cached.
+    Off, the prompt is the PLAN.md text word for word. The header avoids the word "recipe".
+111. **Farming, a bed, and weather: reasons to stay in one place and build.** In
+    runs/haiku_book_s3 the agent had full iron gear by world step 485 and spent most of the rest
+    waiting. Three additions give a base a purpose. All numbers are in world.yaml; each has its
+    own seeded random stream, so terrain and creature draws are unchanged.
+    (a) Farming. Mining grass gives 1 seeds a quarter of the time. Seeds are planted with
+    `place` into an empty cell with dirt or grass under it and water within 4 cells sideways,
+    level with the soil or up to 2 below (lake water sits about 2 below the shore; with 1 below
+    there were almost no plots). The block is a `sprout`; after 300 steps (rain on it counts
+    double) it becomes `wheat`. Mining wheat gives 2 wheat and 1-2 seeds; a sprout gives its
+    seeds back. 3 wheat make bread (food 6, no station). A plot of about six crops feeds one
+    agent, so food stops depending on roaming for bushes and animals.
+    (b) Bed. Sheep also drop 1 wool. 3 wool + 3 planks at a workbench make a bed. New action
+    `sleep`: with a bed within reach, from dusk to dawn by the clock (not a storm's darkness),
+    and no zombie within 8 cells, the world runs on until dawn or until the agent is hurt (so
+    an open bed is a risk), healing 1 health per 5 steps while food is above 0. The bed becomes
+    the respawn point, shown as "respawn point: bed at (x,y,z)", until it is broken.
+    (c) Weather. Every 100 steps a new weather is drawn: clear, rain (25%) or storm (10%); the
+    first 100 steps are clear. Rain or a storm with no solid block anywhere above the head
+    (leaves do not count) drains food twice as fast and stops healing; a storm also hails
+    1 damage every 6 steps, is dark (zombies spawn and do not burn by day), and sky reads
+    "dark". The header gains "| weather rain", and the observation says "rain is falling on
+    you" (or "rain and hail"). With rule_notes on it adds the rule, another break of the
+    wording rule like OBS_NO_HEAL: "while rain falls on you, food drops 2 times as fast and
+    health does not rise". A roof is the whole fix, so a shelter is worth building by day too.
+    Bread and bed stay out of the recipe shuffle (UNSHUFFLED): wheat or wool swapped onto
+    planks or a pickaxe held up everything after it. The sensible bot plants when it holds
+    seeds, harvests ripe wheat, bakes bread, makes a bed (it never sleeps), shelters in storms,
+    roofs with anything but leaves, digs toward buried ore when none is in the open, and jumps
+    up on a held block when it cannot break out of a pit. Its tests now run 2100 steps (2400
+    for alien and shuffled): a crop needs time to ripen.
+112. **Several agents in one world, on a shared clock.** Design in docs/MULTIAGENT.md. Agent
+    state moved from World into Body objects (`world.bodies`, `world.me`); World forwards the
+    old attribute names to `world.me`, so the action code is unchanged. Every action handler is
+    now a generator that yields where it used to tick the world, and World.step() drives it with
+    a tick per yield, so a single agent behaves exactly as before (all tests unchanged, plus a
+    test that one agent through the Engine matches World.step() step for step). The Engine
+    steps every agent's action once per shared world step in a seeded random order; only the
+    world thread changes state, so there are no locks in the simulation and no deadlocks.
+    Rules between agents: bodies block each other and swap when walking into each other;
+    attacks on agents land at the end of the step (mutual kills possible; armor counts);
+    zombies chase the nearest agent; zombie spawns are placed around a random agent; "say"
+    reaches agents within hear_radius (16) once; "give" moves items (tools keep their wear)
+    only if the receiver is within reach and they fit; end_run takes one agent out and the run
+    ends when all are out. Weather and seed drops keep their own streams; one agent alone
+    draws no extra random numbers. The runner gives each LLM agent a thread; its controller
+    reads the world through a WorldView that holds a re-entrant world lock and points
+    world.me at its body. Real time (1 s per step by default) lets a slow model lose time; lockstep
+    waits for every thinker before each step and is reproducible with bots. Multi-agent prompts
+    replace the first line with a fact about time and other agents and add say/give lines.

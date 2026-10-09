@@ -77,7 +77,7 @@ def visible_creatures(world) -> list[dict]:
     """Creatures within view_radius and in line of sight, nearest first."""
     r = world.cfg.view_radius
     px, py, pz = world.pos
-    near = [c for c in world.creatures
+    near = [c for c in world.creatures + world.others()
             if max(abs(c["pos"][0] - px), abs(c["pos"][1] - py), abs(c["pos"][2] - pz)) <= r]
     if not near:
         return []
@@ -90,15 +90,60 @@ def _coords(cells: np.ndarray) -> str:
     return " ".join(f"({int(c[0])},{int(c[1])},{int(c[2])})" for c in cells)
 
 
+def open_beside_line(world) -> str:
+    cells = world.open_beside()
+    if len(cells) == 9:
+        text = T.OBS_OPEN_BESIDE_ALL
+    elif not cells:
+        text = T.OBS_OPEN_BESIDE_NONE
+    else:
+        text = ", ".join(T.OBS_OPEN_BESIDE_ONE.format(where=w, x=p[0], y=p[1], z=p[2]) for w, p in cells)
+    return T.OBS_OPEN_BESIDE.format(cells=text)
+
+
+def vitals_line(world) -> str:
+    v, before = world.cfg.vitals, world.vitals_before()
+    if before is None:
+        return T.OBS_VITALS.format(h=world.health, hm=v.max_health, f=world.food, fm=v.max_food,
+                                   a=world.air, am=v.max_air)
+    t0, h0, f0 = before
+    return T.OBS_VITALS_BEFORE.format(h=world.health, hm=v.max_health, h0=h0, f=world.food, fm=v.max_food,
+                                      f0=f0, t0=t0, a=world.air, am=v.max_air)
+
+
+def made_line(world) -> str | None:
+    """Each thing made so far with the items it was first made from, in the order first made."""
+    if not world.made:
+        return None
+    def count(item: str, n: int) -> str:
+        return world.dn(item) if n == 1 else T.OBS_MADE_COUNT.format(c=n, name=world.dn(item))
+    parts = []
+    for out, (items, n) in world.made.items():
+        inputs = " + ".join(count(i, k) for i, k in items.items())
+        parts.append(T.OBS_MADE_ONE.format(inputs=inputs, output=count(out, n)))
+    return T.OBS_MADE.format(items="; ".join(parts))
+
+
 def render(world) -> str:
     c, v = world.cfg, world.cfg.vitals
     x, y, z = world.pos
     out = [
-        T.OBS_HEADER.format(t=world.t, day=world.day, light=world.light()),
-        T.OBS_POSITION.format(x=x, y=y, z=z),
-        T.OBS_VITALS.format(h=world.health, hm=v.max_health, f=world.food, fm=v.max_food,
-                            a=world.air, am=v.max_air),
+        T.OBS_HEADER.format(t=world.t, day=world.day, light=world.light(), sky=world.sky())
+        + (T.OBS_WEATHER.format(weather=world.weather) if c.weather.enabled else ""),
+        T.OBS_POSITION.format(x=x, y=y, z=z, hy=y + 1),
     ]
+    if world.multi:
+        out.insert(1, T.OBS_SELF.format(id=world.me.id))
+    out += [
+        open_beside_line(world),
+        vitals_line(world),
+    ]
+    if c.rule_notes and world.health < v.max_health and world.food < v.heal_food_min:
+        out.append(T.OBS_NO_HEAL.format(n=v.heal_food_min))
+    if world.wet():
+        out.append(T.OBS_WET.format(what="rain and hail" if world.weather == "storm" else "rain"))
+        if c.rule_notes:
+            out.append(T.OBS_WET_RULE.format(m=c.weather.rain_food_mult))
     inv = []
     for item in sorted(world.inv, key=lambda i: i not in TOOLS):   # tools first, then in the order got
         n, name = world.inv[item], world.dn(item)
@@ -112,12 +157,20 @@ def render(world) -> str:
         out.append(T.OBS_INVENTORY_SLOTS.format(used=world.slots(world.inv), limit=world.cfg.inventory_slots, items=items))
     else:
         out.append(T.OBS_INVENTORY.format(items=items))
+    made = made_line(world) if c.rule_notes else None
+    if made:
+        out.append(made)
+    if world.bed is not None:
+        out.append(T.OBS_RESPAWN.format(bed=world.dn("bed"), x=world.bed[0], y=world.bed[1], z=world.bed[2]))
     if world.last_action is not None:
         out.append(T.OBS_LAST.format(action=world.last_action, result=world.last_result))
     if world._death_notice:
         out.append(world._death_notice)
     if world._notice:
         out.append(world._notice)
+    if world.me.heard:
+        out.append(T.OBS_HEARD)
+        out += world.me.heard[-12:]
     out.append("")
 
     cells, ids = visible_blocks(world)

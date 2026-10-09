@@ -23,12 +23,12 @@ def bot_run(seed: int, steps: int, **overrides):
 
 @pytest.fixture(scope="module")
 def familiar_run():
-    return bot_run(1, 1500)
+    return bot_run(1, 2100)
 
 
 @pytest.fixture(scope="module")
 def alien_run():
-    return bot_run(1, 1500, names="alien")
+    return bot_run(1, 2100, names="alien")
 
 
 def test_layout(flat):
@@ -39,20 +39,49 @@ def test_layout(flat):
     flat.set_block(34, 10, 32, "stone")
     flat.step({"name": "mine", "x": 34, "y": 10, "z": 32})
     lines = flat.observe().split("\n")
-    assert lines[:6] == [
-        "step 3 | day 1 | light bright",
-        "position (32, 10, 32)",
-        "health 20/20 | food 20/20 | air 10/10",
+    assert lines[:7] == [
+        "step 3 | day 1 | light bright | sky bright | weather clear",
+        "position (32, 10, 32), head at (32, 11, 32)",
+        "open cells touching you: all 9 (4 sides at feet and at head level, and above the head)",
+        "health 20/20 (20 at step 0) | food 20/20 (20 at step 0) | air 10/10",
         "inventory (3 of 10 slots): stone pickaxe (59 uses left), planks x6, stone x1",
         "last action: mine (34, 10, 32). Result: Got 1 stone.",
         "",
     ]
-    assert lines[6] == "close (within 3 cells):"
-    assert lines[7].startswith("  grass: 49 seen, nearest (32,9,32) ")
-    assert lines[8] == "  open air above your head, from (32,12,32) up"
-    assert lines[9] == "in view (within 12 cells):"
-    assert lines[10].startswith("  grass: ") and lines[10].endswith(" seen, nearest (28,9,32)")
-    assert lines[11:] == ["creatures:", "  sheep #1 at (28,10,35)"]
+    assert lines[7] == "close (within 3 cells):"
+    assert lines[8].startswith("  grass: 49 seen, nearest (32,9,32) ")
+    assert lines[9] == "  open air above your head, from (32,12,32) up"
+    assert lines[10] == "in view (within 12 cells):"
+    assert lines[11].startswith("  grass: ") and lines[11].endswith(" seen, nearest (28,9,32)")
+    assert lines[12:] == ["creatures:", "  sheep #1 at (28,10,35)"]
+
+
+def test_open_cells_touching_the_body_and_the_sky(flat):
+    """runs/haiku_fresh_s2_v2: walls at the feet only, killed from head level three times; and a
+    roofed shelter read "dark" at noon, so it waited for a daylight that never came."""
+    flat.cfg.creatures.passive_move_prob = 0.0
+    for dx, dz in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+        flat.set_block(32 + dx, 10, 32 + dz, "stone")             # feet level walled
+    flat.set_block(32, 12, 32, "stone")                           # roof
+    lines = flat.observe().split("\n")
+    assert lines[0] == "step 0 | day 1 | light dark | sky bright | weather clear"
+    assert lines[2] == ("open cells touching you: head north (32,11,31), head south (32,11,33), "
+                        "head east (33,11,32), head west (31,11,32)")
+    for dx, dz in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+        flat.set_block(32 + dx, 11, 32 + dz, "stone")
+    assert flat.observe().split("\n")[2] == "open cells touching you: none"
+
+
+def test_vitals_line_shows_health_and_food_a_lookback_ago(flat):
+    """Food drain is slow (1 per 15 steps): the agent sees it only by comparing with earlier."""
+    flat.cfg.creatures.passive_move_prob = 0.0
+    assert "health 20/20 | food 20/20 | air 10/10" in flat.observe()      # step 0: nothing to compare
+    for _ in range(10):
+        flat.step({"name": "wait", "steps": 8})
+    assert flat.t == 80 and flat.food == 15
+    assert "health 20/20 (20 at step 20) | food 15/20 (19 at step 20) | air 10/10" in flat.observe()
+    flat.cfg.vitals_lookback = 0
+    assert "health 20/20 | food 15/20 | air 10/10" in flat.observe()
 
 
 def test_no_xray(flat):
@@ -110,11 +139,14 @@ def test_templates_have_no_banned_words():
 
 def test_bot_run_text_has_no_banned_words_and_stays_short(familiar_run):
     w, obs, results = familiar_run
-    assert len(w.firsts["craft"]) == 17
+    assert len(w.firsts["craft"]) == 19
     for text in obs + results:
         assert not any(b in text.lower() for b in BANNED), text
-    # About 600 tokens. Coordinates cost about one token per 2.5 characters.
-    assert max(len(o) for o in obs) < 1500
+    # About 600 tokens. Coordinates cost about one token per 2.5 characters. The list of things
+    # made grows to all 19 in this run and is measured on its own.
+    made = [line for o in obs for line in o.splitlines() if line.startswith("things you have made:")]
+    assert max(len(o) for o in obs) - max(map(len, made)) < 1650     # + weather, rain and respawn lines
+    assert max(map(len, made)) < 600
 
 
 def test_same_seed_gives_the_same_terrain_in_both_name_modes():
@@ -138,7 +170,7 @@ def test_alien_names_are_made_up_and_seeded():
 
 def test_no_familiar_name_in_alien_observations(alien_run):
     w, obs, results = alien_run
-    assert w.deaths == 0 and len(w.firsts["craft"]) == 17      # the run saw every item
+    assert w.deaths == 0 and len(w.firsts["craft"]) == 19      # the run saw every item
     # "air" stays: it is the name of a vital, and air is never listed as a block.
     words = sorted({x for n in defs.ALL_NAMES for x in n.split()})
     pat = re.compile(r"\b(" + "|".join(words) + r")\b", re.I)
@@ -164,3 +196,39 @@ def test_alien_mode_does_not_accept_familiar_names():
     r = w.step({"name": "eat", "item": "berries"})
     assert r.text == T.NO_ITEM and not r.valid and w.food == 5
     assert w.step({"name": "eat", "item": w.dn("berries")}).valid
+
+
+def test_observation_lists_what_was_made_and_keeps_it_through_death():
+    from conftest import flat_world
+    w = flat_world()
+    w._add("log", 2)
+    assert "things you have made" not in w.observe()
+    w.step({"name": "craft", "items": {"log": 1}})
+    w.step({"name": "craft", "items": {"planks": 2}})
+    w.step({"name": "craft", "items": {"log": 1}})                     # made again: listed once
+    line = next(l for l in w.observe().splitlines() if l.startswith("things you have made"))
+    assert line == "things you have made: log -> 4 planks; 2 planks -> 4 sticks"
+    w.food, w.health = 0, 1
+    assert w.step({"name": "wait", "steps": 8}).died == "hunger"
+    assert w.inv == {} and line in w.observe()
+
+
+def test_made_list_is_wiped_with_the_memory():
+    from conftest import flat_world
+    w = flat_world(on_death="respawn_wipe_memory")
+    w._add("log", 1)
+    w.step({"name": "craft", "items": {"log": 1}})
+    w.food, w.health = 0, 1
+    w.step({"name": "wait", "steps": 8})
+    assert "things you have made" not in w.observe()
+
+
+def test_observation_says_health_does_not_rise_on_low_food():
+    from conftest import flat_world
+    w = flat_world()
+    w.health, w.food = 10, 14
+    assert "health does not rise while food is under 15" in w.observe()
+    w.food = 15
+    assert "does not rise" not in w.observe()
+    w.health, w.food = 20, 5                                             # full health: nothing to say
+    assert "does not rise" not in w.observe()

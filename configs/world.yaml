@@ -6,6 +6,10 @@ shuffle_recipes: false
 on_death: respawn_keep_memory   # respawn_keep_memory | respawn_wipe_memory | end_run
 on_stuck: end_run               # end_run | continue (continue only logs the stuck event)
 
+vitals_lookback: 60         # observation shows health and food this many steps ago (0 = off)
+rule_notes: true            # say why a craft failed or health is not rising, list what was made (see DECISIONS 109)
+recipe_book: false         # list every craft in the system prompt (see DECISIONS 110)
+
 day_length: 300
 night_start: 200            # steps 0..199 are day, 200..299 are night
 dim_steps: 20               # last steps of day and of night are "dim"
@@ -32,7 +36,7 @@ vitals:
   drown_damage: 2
   fall_safe: 3
 
-food: {berries: 2, raw meat: 3, cooked meat: 8}
+food: {berries: 2, raw meat: 3, cooked meat: 8, bread: 6}
 berries_per_bush: 2
 bush_regrow: 150
 
@@ -49,6 +53,9 @@ hardness:
   workbench: 4
   door: 4
   chest: 4
+  sprout: 1
+  wheat: 1
+  bed: 2
   furnace: 6
   stone: 8
   coal ore: 10
@@ -67,6 +74,29 @@ durability:                 # uses before the tool is gone
 hand_damage: 2
 sword_damage: {wood sword: 3, stone sword: 4, iron sword: 6}
 armor: {iron helmet: 1, iron chestplate: 2}   # zombie damage taken off per piece held, at least 1 gets through
+
+sleep_zombie_dist: 8        # no sleep with a zombie this close
+sleep_heal_every: 5         # asleep with food above 0: 1 health every this many steps
+hear_radius: 16             # multi-agent: "say" reaches agents this close
+say_max_chars: 200          # longer speech is cut
+pvp_loot: false             # multi-agent: a killer gets what fits of the victim's inventory
+
+farming:
+  seed_chance: 0.25         # chance that mining grass also gives 1 seeds
+  water_dist: 4             # seeds need water within this many cells sideways, level with the soil or up to 2 below; 0 = no need
+  grow_steps: 300           # steps for a sprout to turn into wheat; steps in rain count double
+  wheat_per_crop: 2
+  seeds_per_crop: 1         # plus 1 more with seed_bonus_chance
+  seed_bonus_chance: 0.5
+
+weather:
+  enabled: true
+  spell: 100                # a new weather every this many steps (the first spell is clear)
+  rain_prob: 0.25
+  storm_prob: 0.1           # a storm is dark: zombies spawn and stay out by day
+  rain_food_mult: 2         # with no roof in rain or storm: food drains this many times as fast, no healing
+  hail_every: 6             # with no roof in a storm: hail_damage every this many steps
+  hail_damage: 1
 
 terrain:
   base_height: 15.2
@@ -99,11 +129,14 @@ creatures:
   animal_count_mult: 1.0    # scales sheep+chicken start, max, and respawn
   health: {sheep: 6, chicken: 4, zombie: 10}
   meat: {sheep: 2, chicken: 1, zombie: 0}
+  wool: {sheep: 1}        # wool from a sheep kill
   zombie_max: 9
   zombie_spawn_prob: 0.12   # chance per night step while below zombie_max
   zombie_spawn_min_dist: 12
   zombie_spawn_max_dist: 24
-  zombie_chase_dist: 20
+  zombie_dark_spawn_prob: 0.015  # any hour: chance per step of a spawn in a covered cell with no torch near
+  zombie_dark_min_dist: 5         # sideways distance from the agent for those spawns
+  zombie_chase_dist: 15
   zombie_step_every: 1.5    # world steps per zombie move (1.5 = moves on 2 of every 3 steps)
   zombie_damage: 3
   zombie_cooldown: 2

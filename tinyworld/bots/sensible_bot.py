@@ -1,4 +1,5 @@
-"""Baseline: a hand-coded bot. It gathers food, makes tools, and walls itself in at night.
+"""Baseline: a hand-coded bot. It gathers food, makes tools, farms, and walls itself in at night
+and in storms.
 
 It reads the world's internals directly (block grid, recipe table, creature list).
 All names inside this file are familiar names. They are turned into shown names on the way out.
@@ -18,11 +19,16 @@ WAIT = {"name": "wait", "steps": 1}
 FILL = ["dirt", "grass", "sand", "leaves", "stone", "planks", "log"]      # used for walls, in this order
 SOFT = ["grass", "dirt", "sand", "leaves"]                                 # dug up for wall material
 BLOCK_SOURCE = {"log": "log", "stone": "stone", "coal": "coal ore", "iron ore": "iron ore",
-                "dirt": "dirt", "grass": "grass", "sand": "sand", "leaves": "leaves", "berries": "berry bush"}
-GOALS = ["wood pickaxe", "wood sword", "stone pickaxe", "stone sword", "furnace", "torch", "iron pickaxe", "iron sword",
-         "door", "chest", "iron helmet", "iron chestplate"]
-JUNK = ["leaves", "sand", "grass", "chest", "log", "sticks", "planks", "coal", "dirt", "torch", "stone", "iron ore"]   # dropped first
-KEEP = {"dirt": 9, "stone": 12, "log": 3, "planks": 8, "sticks": 4, "coal": 4, "iron ore": 8}   # held back from drops
+                "dirt": "dirt", "grass": "grass", "sand": "sand", "leaves": "leaves", "berries": "berry bush",
+                "seeds": "grass"}
+GOALS = ["wood pickaxe", "wood sword", "stone pickaxe", "stone sword", "furnace", "torch", "bed", "iron pickaxe",
+         "iron sword", "door", "chest", "iron helmet", "iron chestplate", "cooked meat", "bread"]
+JUNK = ["leaves", "sand", "grass", "chest", "log", "sticks", "planks", "coal", "dirt", "torch", "stone", "iron ore",
+        "seeds", "wool", "wheat"]   # dropped first
+KEEP = {"dirt": 9, "stone": 12, "log": 3, "planks": 8, "sticks": 4, "coal": 4, "iron ore": 8,
+        "seeds": 3, "wool": 3, "wheat": 3}   # held back from drops
+CROPS = 2                                     # sprouts it keeps in the ground
+FARM = {"seeds", "wool", "wheat"}             # never dropped whole: slow to come by
 STEP_DIR = {(0, -1): "north", (0, 1): "south", (1, 0): "east", (-1, 0): "west"}
 
 
@@ -77,7 +83,7 @@ class SensibleBot:
         a = self._tidy(w)
         if a:
             return a
-        if tod >= self.shelter_at:
+        if tod >= self.shelter_at or w.weather == "storm":
             return self._shelter(w)
         if self.walls:
             return self._leave(w)
@@ -90,6 +96,9 @@ class SensibleBot:
             a = self._hard_prep(w)
             if a:
                 return a
+        a = self._tend(w)
+        if a:
+            return a
         crafted = w.firsts["craft"]
         for goal in GOALS:
             if goal in crafted or w.inv.get(goal, 0):
@@ -129,8 +138,18 @@ class SensibleBot:
         sx, _, sz = defs.DIRS[d]
         for c in ((x, y + 2, z), (x + sx, y + 1, z + sz), (x + sx, y + 2, z + sz)):
             if w.inb(*c) and not defs.AGENT_PASS[w.bid(*c)]:
-                return {"name": "mine", "x": c[0], "y": c[1], "z": c[2]} if w.mine_steps(w.block(*c)) else None
+                if w.mine_steps(w.block(*c)):
+                    return {"name": "mine", "x": c[0], "y": c[1], "z": c[2]}
+                return self._pillar(w)                             # a wall it cannot break: build up instead
         return {"name": "move", "dir": d, "steps": 1}
+
+    def _pillar(self, w) -> dict | None:
+        """Jump up onto a held block, if the cell above the head is open."""
+        x, y, z = w.pos
+        if not (w.inb(x, y + 2, z) and defs.AGENT_PASS[w.bid(x, y + 2, z)]):
+            return None
+        item = next((i for i in FILL if w.inv.get(i, 0) and defs.SUPPORT[defs.ID[i]]), None)
+        return {"name": "jump", "item": item} if item else None
 
     def _tidy(self, w) -> dict | None:
         """With under two slots free, drop an outdone or spare tool, else junk beyond what it keeps.
@@ -145,12 +164,19 @@ class SensibleBot:
                 return {"name": "drop", "items": {t: w.inv[t]}}
             if held and w.inv[held[-1]] > 1:
                 return {"name": "drop", "items": {held[-1]: w.inv[held[-1]] - 1}}
-        for item in JUNK:
-            if w.inv.get(item, 0) > KEEP.get(item, 0):
-                return {"name": "drop", "items": {item: w.inv[item] - KEEP.get(item, 0)}}
+        junk = (["bed"] if "bed" in w.firsts["craft"] else []) + JUNK      # it never sleeps
+        if not w.cfg.creatures.zombie_breaks and "door" in w.firsts["craft"]:
+            junk = ["door"] + junk                                 # only hard-mode shelters use a door
+        done = set(w.firsts["craft"])
+        keep = {i: (0 if (i == "wool" and "bed" in done) or (i in ("seeds", "wheat") and "bread" in done) else n)
+                for i, n in KEEP.items()}                          # farm things it no longer needs
+        for item in junk:
+            if w.inv.get(item, 0) > keep.get(item, 0):
+                return {"name": "drop", "items": {item: w.inv[item] - keep.get(item, 0)}}
         if full:                                                   # not what the failed action was using
             used = w.last_action or ""
-            item = next((i for i in JUNK if w.inv.get(i, 0) and w.dn(i) not in used), None)
+            spare = [i for i in junk if w.inv.get(i, 0) and w.dn(i) not in used]
+            item = next((i for i in spare if i not in FARM), None) or next(iter(spare), None)
             if item:
                 return {"name": "drop", "items": {item: w.inv[item]}}
         return None
@@ -161,7 +187,7 @@ class SensibleBot:
     def _eat(self, w) -> dict | None:
         room = w.cfg.vitals.max_food - w.food
         can_cook = bool(w.find("furnace"))
-        for item in ("cooked meat", "berries", "raw meat"):
+        for item in ("cooked meat", "bread", "berries", "raw meat"):
             if not w.inv.get(item):
                 continue
             if item == "raw meat" and can_cook and w.food > 6:
@@ -235,9 +261,9 @@ class SensibleBot:
         with blocks a zombie cannot break (stone) and sets one door for the entrance.
         """
         breaks = set(w.cfg.creatures.zombie_breaks)
-        if not breaks:
-            return next((i for i in FILL if w.inv.get(i, 0)), None), False
         roof = (w.pos[0], w.pos[1] + 2, w.pos[2])
+        if not breaks:                                    # leaves let rain and hail through: not for the roof
+            return next((i for i in FILL if w.inv.get(i, 0) and not (cell == roof and i == "leaves")), None), False
         if cell != roof and not self._door_placed and w.inv.get("door", 0):
             return "door", True
         return next((i for i in FILL if i not in breaks and w.inv.get(i, 0)), None), False
@@ -304,9 +330,70 @@ class SensibleBot:
 
     # -------------------------------------------------------------- getting
 
-    def _get_food(self, w, meat_only: bool = False) -> dict | None:
-        bushes = [] if meat_only else w.find("berry bush")
-        animals = {tuple(c["pos"]): c for c in w.creatures if c["kind"] in defs.PASSIVE}
+    def _farm(self, w, stack: frozenset) -> dict:
+        """Harvest ripe wheat, else keep CROPS sprouts in the ground near water, else wait on them
+        (a WAIT, so the goal counts as stalled and the bot gets on with other things)."""
+        ripe = w.find("wheat")
+        if ripe:
+            got = self._goto(w, ripe, w.cfg.reach)
+            if isinstance(got, tuple):
+                x, y, z = got[1]
+                return {"name": "mine", "x": x, "y": y, "z": z}
+            if got:
+                return got
+        if len(w.crops) >= CROPS:
+            return WAIT
+        if not w.inv.get("seeds"):
+            return self._want(w, "seeds", 1, stack) or WAIT
+        spots = self._plots(w)
+        got = self._goto(w, spots, w.cfg.reach) if spots else None
+        if isinstance(got, tuple):
+            x, y, z = got[1]
+            return {"name": "place", "item": "seeds", "x": x, "y": y, "z": z}
+        return got or WAIT
+
+    def _tend(self, w, near: int = 20) -> dict | None:
+        """On the way: harvest ripe wheat, and plant held seeds while fewer than CROPS grow, when
+        the spot is within near cells (sideways)."""
+        if "bread" in w.firsts["craft"]:
+            return None
+        if w.inv.get("wheat", 0) >= 3:
+            return {"name": "craft", "items": {"wheat": 3}}
+        x0, _, z0 = w.pos
+        close = lambda c: abs(c[0] - x0) + abs(c[2] - z0) <= near
+        ripe = [c for c in w.find("wheat") if close(c)]
+        if not ripe and not (w.inv.get("seeds") and len(w.crops) < CROPS):
+            return None
+        targets = ripe or [c for c in self._plots(w) if close(c)]
+        got = self._goto(w, targets, w.cfg.reach) if targets else None
+        if isinstance(got, tuple):
+            x, y, z = got[1]
+            if ripe:
+                return {"name": "mine", "x": x, "y": y, "z": z}
+            return {"name": "place", "item": "seeds", "x": x, "y": y, "z": z}
+        return got
+
+    def _plots(self, w, k: int = 12) -> list[tuple[int, int, int]]:
+        """Up to k open cells on top of a column, with soil under them and water near, where
+        seeds take, nearest the agent first."""
+        b = w.blocks
+        top = w.sy - 1 - np.argmax((b != defs.AIR)[::-1], axis=0)          # (z, x)
+        zs, xs = np.indices(top.shape)
+        soil = np.isin(b[top, zs, xs], [defs.ID[n] for n in defs.SOIL]) & (top + 1 < w.sy)
+        x0, _, z0 = w.pos
+        cand = sorted(zip(*np.nonzero(soil)), key=lambda zx: (abs(zx[1] - x0) + abs(zx[0] - z0), zx))
+        out = []
+        for z, x in cand:
+            p = (int(x), int(top[z, x]) + 1, int(z))
+            if w._water_near(p) and not w._occupied(*p) and not w._agent_in(*p):
+                out.append(p)
+                if len(out) >= k:
+                    break
+        return out
+
+    def _get_food(self, w, meat_only: bool = False, kinds: tuple = tuple(defs.PASSIVE)) -> dict | None:
+        bushes = [] if meat_only or kinds != tuple(defs.PASSIVE) else w.find("berry bush")
+        animals = {tuple(c["pos"]): c for c in w.creatures if c["kind"] in kinds}
         pos = tuple(w.pos)
         near = [c for p, c in animals.items() if cheb(p, pos) <= w.cfg.attack_reach]
         if near:
@@ -326,12 +413,36 @@ class SensibleBot:
         mask = (w.blocks == defs.ID[block]) & w.exposed_mask()
         targets = [(int(x), int(y), int(z)) for y, z, x in np.argwhere(mask)]
         got = self._goto(w, targets, w.cfg.reach)
+        if got is None and block in defs.MINE_TIER:
+            got = self._dig_toward(w, block)
         if got is None:
             return WAIT
         if isinstance(got, tuple):
             x, y, z = got[1]
             return {"name": "mine", "x": x, "y": y, "z": z}
         return got
+
+    def _dig_toward(self, w, block: str):
+        """No ore of this kind is out in the open: break into the ground toward the nearest
+        buried one, a block at a time (the exposed, breakable block closest to it)."""
+        ore = [(int(x), int(y), int(z)) for y, z, x in np.argwhere(w.blocks == defs.ID[block])]
+        if not ore:
+            return None
+        pos = tuple(w.pos)
+        goal = min(ore, key=lambda c: (sum((a - b) ** 2 for a, b in zip(c, pos)), c))
+        r = 4
+        x0, y0, z0 = goal
+        best = None
+        for y in range(max(1, y0 - r), min(w.sy, y0 + r + 1)):
+            for z in range(max(0, z0 - r), min(w.sz, z0 + r + 1)):
+                for x in range(max(0, x0 - r), min(w.sx, x0 + r + 1)):
+                    b = w.block(x, y, z)
+                    if b in ("air", "water") or not w.mine_steps(b) or not w.exposed(x, y, z) or (x, y - 1, z) == pos:
+                        continue
+                    key = (sum((a - c) ** 2 for a, c in zip((x, y, z), goal)), (x, y, z))
+                    if best is None or key < best:
+                        best = key
+        return self._goto(w, [best[1]], w.cfg.reach) if best else None
 
     def _pick_for(self, tier: int) -> str:
         """The first pickaxe of at least this tier that the recipe table lets one reach."""
@@ -367,6 +478,10 @@ class SensibleBot:
         stack = stack | {item}
         if item == "raw meat":
             return self._get_food(w, meat_only=True) or WAIT
+        if item == "wool":
+            return self._get_food(w, kinds=("sheep",)) or WAIT
+        if item == "wheat":
+            return self._farm(w, stack)
         if item in BLOCK_SOURCE:
             return self._mine_for(w, BLOCK_SOURCE[item], stack)
         r = next((r for r in w.recipes if r.output == item), None)

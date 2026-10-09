@@ -157,3 +157,9 @@ select { font: inherit; border: 1px solid var(--line); border-radius: 999px; pad
 .chest-row { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; font-size: 12px; }
 .chest-row .chest-at { font-weight: 600; color: var(--muted); margin-right: 2px; }
 .chip.small { font-size: 11px; padding: 1px 6px; }
+
+.roster { display: flex; flex-wrap: wrap; gap: 4px 10px; margin: 4px 0; font-size: 12px; }
+.roster:empty { display: none; }
+.roster-row { opacity: 0.85; white-space: nowrap; }
+.roster-row.me { font-weight: 600; opacity: 1; }
+.roster-row.gone { opacity: 0.45; text-decoration: line-through; }

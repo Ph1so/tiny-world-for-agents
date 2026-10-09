@@ -4,6 +4,9 @@ import * as THREE from "three";
 import { SKY } from "./palette";
 
 const STAR_COUNT = 1800;
+const RAIN_COUNT = 2400;
+const RAIN_BOX = [56, 34, 56];               // drops fall in this box around the sun's target
+const OVERCAST = 0x8f99a8;
 
 function glowTexture(): THREE.Texture {
   const c = document.createElement("canvas");
@@ -39,6 +42,10 @@ export class Sky {
   private lights: THREE.PointLight[] = [];
   /** 0 = night, 1 = full day. */
   daylight = 1;
+  rain: THREE.LineSegments;
+  private rainMat: THREE.LineBasicMaterial;
+  private rainPos: Float32Array;
+  private cGrey = new THREE.Color(OVERCAST);
 
   constructor(worldSize: [number, number, number]) {
     const [sx, sy, sz] = worldSize;
@@ -74,6 +81,19 @@ export class Sky {
     this.stars.frustumCulled = false;
     this.group.add(this.stars);
     this.fog = new THREE.Fog(0xffffff, 90, 260);
+    // Rain: short vertical streaks, wrapped round a box that follows the sun's target.
+    this.rainPos = new Float32Array(RAIN_COUNT * 6);
+    for (let i = 0; i < RAIN_COUNT; i++) {
+      const x = Math.random() * RAIN_BOX[0], y = Math.random() * RAIN_BOX[1], z = Math.random() * RAIN_BOX[2];
+      this.rainPos.set([x, y, z, x, y + 0.7, z], i * 6);
+    }
+    const rg = new THREE.BufferGeometry();
+    rg.setAttribute("position", new THREE.BufferAttribute(this.rainPos, 3));
+    this.rainMat = new THREE.LineBasicMaterial({ color: 0xc8d6ea, transparent: true, opacity: 0.55, depthWrite: false });
+    this.rain = new THREE.LineSegments(rg, this.rainMat);
+    this.rain.frustumCulled = false;
+    this.rain.visible = false;
+    this.group.add(this.rain);
     this.glowMat = new THREE.SpriteMaterial({ map: glowTexture(), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
     for (let i = 0; i < 6; i++) {
       const l = new THREE.PointLight(0xffb866, 0, 9, 1.6);
@@ -81,6 +101,26 @@ export class Sky {
       this.group.add(l);
       this.lights.push(l);
     }
+  }
+
+  private updateRain(weather: string, dt: number): void {
+    const on = weather === "rain" || weather === "storm";
+    this.rain.visible = on;
+    if (!on) return;
+    const t = this.sun.target.position;
+    this.rain.position.set(t.x - RAIN_BOX[0] / 2, t.y - 8, t.z - RAIN_BOX[2] / 2);
+    const fall = (weather === "storm" ? 34 : 22) * Math.min(dt, 0.1);
+    const slant = weather === "storm" ? 0.35 : 0;
+    const p = this.rainPos;
+    for (let i = 0; i < RAIN_COUNT; i++) {
+      const o = i * 6;
+      let y = p[o + 1] - fall;
+      if (y < 0) y += RAIN_BOX[1];
+      p[o + 1] = y; p[o + 4] = y + 0.7;
+      p[o + 3] = p[o] + slant;
+    }
+    (this.rain.geometry.getAttribute("position") as THREE.BufferAttribute).needsUpdate = true;
+    this.rainMat.opacity = weather === "storm" ? 0.7 : 0.5;
   }
 
   /** Torch positions changed. Rebuild the glow sprites and point the lights at the first few. */
@@ -106,7 +146,8 @@ export class Sky {
   /**
    * stepInDay in [0, dayLength). light is the world's light field. time is seconds, for flicker.
    */
-  update(stepInDay: number, dayLength: number, nightStart: number, dimSteps: number, light: string, time: number): void {
+  update(stepInDay: number, dayLength: number, nightStart: number, dimSteps: number, light: string, time: number,
+         weather = "clear", dt = 0): void {
     // Daylight curve: 1 during the day, fading over dimSteps before night, back up over the last dimSteps.
     let d: number;
     const dim = Math.max(1, dimSteps);
@@ -126,6 +167,13 @@ export class Sky {
       out.copy(this.tmpA).lerp(this.tmpB.setHex(SKY.dusk[key]), dusk * 0.75);
     };
     mix("sky", this.cSky); mix("horizon", this.cHorizon); mix("ground", this.cGround); mix("sun", this.cSun);
+    // Overcast: rain greys the sky, a storm more so (its darkness already comes from the light field).
+    const grey = weather === "storm" ? 0.7 : weather === "rain" ? 0.5 : 0;
+    if (grey) {
+      this.tmpA.copy(this.cGrey).multiplyScalar(0.35 + 0.65 * d);
+      this.cSky.lerp(this.tmpA, grey); this.cHorizon.lerp(this.tmpA, grey); this.cSun.lerp(this.tmpA, grey * 0.8);
+    }
+    this.updateRain(weather, dt);
     this.background.copy(this.cSky);
     this.fog.color.copy(this.cHorizon);
     this.hemi.color.copy(this.cHorizon);

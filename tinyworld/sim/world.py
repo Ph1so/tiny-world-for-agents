@@ -6,11 +6,13 @@ import hashlib
 import json
 import math
 import zlib
+from collections import deque
 from dataclasses import dataclass, field
 
 import numpy as np
 
 from . import defs, text as T
+from .body import Body, forward_body_fields
 from .config import WorldConfig
 from .defs import AGENT_PASS, AIR, BLOCKS, CREATURE_PASS, DIRS, ID, SUPPORT, TORCH, WATER
 from .names import build_display_names
@@ -19,7 +21,12 @@ from .terrain import generate
 
 Pos = tuple[int, int, int]
 LIGHTS = ["dark", "dim", "bright"]
+_SUPPORT_ARR = np.array(SUPPORT)
+_SOLID_ROOF = _SUPPORT_ARR.copy()              # blocks that shut out the sky: solid, not leaves
+_SOLID_ROOF[ID["leaves"]] = False
 _NEIGHBOURS = [(1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1)]
+_OPPOSITE = {"north": "south", "south": "north", "east": "west", "west": "east", "up": "down", "down": "up"}
+WORLD_EVENTS = {"day_start", "night_start", "weather"}   # not about any one agent
 
 
 @dataclass
@@ -54,6 +61,8 @@ def cheb(a, b) -> int:
 
 class World:
     def __init__(self, cfg: WorldConfig, seed: int = 0):
+        self.me = Body()                                 # the body actions and vitals apply to
+        self.bodies: list[Body] = [self.me]
         self.cfg = cfg
         self.seed = int(seed)
         self.rng = np.random.default_rng(self.seed)      # the one generator for terrain and dynamics
@@ -71,13 +80,24 @@ class World:
         self.inv: dict[str, int] = {}
         self.tools: dict[str, int] = {}                  # tool name -> uses left on the one in use
         self.chests: dict[Pos, dict[str, int]] = {}      # chest cell -> items in it; kept through death
+        self.world_spawn: Pos = tuple(self.spawn)        # where the first body starts
         self._reset_vitals()
         self.creatures: list[dict] = []
         self._next_id = 1
         for kind, pos in start:
             self._spawn(kind, pos)
         self.regrow: list[list[int]] = []                # [t_due, x, y, z]
-        self.firsts: dict[str, list[str]] = {"mine": [], "craft": [], "place": [], "eat": []}
+        # Separate streams, so weather and seed drops never shift terrain or creature draws.
+        self._weather_rng = np.random.default_rng([self.seed, 0x3EA7])
+        self._farm_rng = np.random.default_rng([self.seed, 0xFA23])
+        self.weather = "clear"
+        self.crops: dict[Pos, int] = {}                  # sprout cell -> growth so far
+        self.bed: Pos | None = None                      # respawn point once slept in; kept through death
+        self._asleep = False
+        # output -> (items used, count made), the first way each thing was made. Kept through death
+        # unless the memory is wiped, as it stands for what the agent knows.
+        self.made: dict[str, tuple[dict[str, int], int]] = {}
+        self._strikes: list[tuple[Body, int, Body]] = []   # (target, damage, attacker) this step
         self._last_hit = -10**9
         self.last_action: str | None = None
         self.last_result: str | None = None
@@ -88,6 +108,7 @@ class World:
         self._deltas: list[dict] = []
         self._events: list[dict] = []
         self._hurt = False
+        self._hits: list[str] = []       # who hit the agent this step, added to the result
         self._died: str | None = None
         self._cause = ""
 
@@ -143,7 +164,72 @@ class World:
     # ------------------------------------------------------------- movement
 
     def _occupied(self, x: int, y: int, z: int) -> bool:
-        return any(c["pos"][0] == x and c["pos"][1] == y and c["pos"][2] == z for c in self.creatures)
+        """A creature stands in the cell, or another agent's feet or head is in it."""
+        return (any(c["pos"][0] == x and c["pos"][1] == y and c["pos"][2] == z for c in self.creatures)
+                or self._body_at(x, y, z, but=self.me) is not None)
+
+    # ---------------------------------------------------------- many bodies
+
+    @property
+    def multi(self) -> bool:
+        """More than one agent, or agents with ids: the multi-agent world."""
+        return self.me.id is not None
+
+    def living(self) -> list[Body]:
+        return [b for b in self.bodies if b.alive]
+
+    def _body_at(self, x: int, y: int, z: int, but: Body | None = None) -> Body | None:
+        """The living body whose feet or head is in this cell, other than but."""
+        for b in self.bodies:
+            if b is not but and b.alive and b.pos[0] == x and b.pos[2] == z and y in (b.pos[1], b.pos[1] + 1):
+                return b
+        return None
+
+    def _any_agent_in(self, x: int, y: int, z: int) -> bool:
+        return self._body_at(x, y, z) is not None
+
+    def body(self, id: int) -> Body | None:
+        return next((b for b in self.bodies if b.id == id), None)
+
+    def others(self) -> list[dict]:
+        """Every other living agent, shaped like a creature entry."""
+        return [{"id": b.id, "kind": "agent", "pos": b.pos} for b in self.bodies if b is not self.me and b.alive]
+
+    def add_body(self, name: str | None = None) -> Body:
+        """Another agent, standing on the free cell nearest the start point. The first call names
+        the body the world was made with; each later call adds one."""
+        if self.me.id is None:
+            b = self.me
+        else:
+            b = Body()
+            self.bodies.append(b)
+        b.id, b.name = self._next_id, name
+        self._next_id += 1
+        me = self.me
+        self.me = b
+        if b is not self.bodies[0] or b.pos == [0, 0, 0]:
+            cell = self._free_cell_near(self.world_spawn)
+            b.spawn, b.pos = cell, list(cell)
+            self._reset_vitals()
+        self.me = me
+        return b
+
+    def _free_cell_near(self, p) -> Pos:
+        """The nearest dry standing cell to p (sideways rings, any height) that no agent or
+        creature is in."""
+        px, py, pz = p
+        for r in range(0, max(self.sx, self.sz)):
+            for x in range(px - r, px + r + 1):
+                for z in range(pz - r, pz + r + 1):
+                    if max(abs(x - px), abs(z - pz)) != r or not (0 <= x < self.sx and 0 <= z < self.sz):
+                        continue
+                    for y in sorted(range(1, self.sy - 1), key=lambda yy: abs(yy - py)):
+                        if (self.bid(x, y, z) != WATER and AGENT_PASS[self.bid(x, y, z)]
+                                and AGENT_PASS[self.bid(x, y + 1, z)] and SUPPORT[self.bid(x, y - 1, z)]
+                                and not self._any_agent_in(x, y, z) and not self._any_agent_in(x, y + 1, z)
+                                and not any(c["pos"] == [x, y, z] for c in self.creatures)):
+                            return (x, y, z)
+        return tuple(p)
 
     def step_target(self, pos, d: str) -> Pos | None:
         """Cell the agent would step into, before falling. None if blocked."""
@@ -180,8 +266,20 @@ class World:
         return None if tgt is None else self.settle(tgt)
 
     def _move_once(self, d: str) -> bool:
+        me = self.me
+        if me.swapped_t == self.t:                    # a partner already swapped places with us
+            return True
         tgt = self.step_target(self.pos, d)
-        if tgt is None or self._occupied(*tgt) or self._occupied(tgt[0], tgt[1] + 1, tgt[2]):
+        if tgt is None:
+            return False
+        other = self._body_at(*tgt, but=me) or self._body_at(tgt[0], tgt[1] + 1, tgt[2], but=me)
+        if other is not None and other.heading == _OPPOSITE[d] and other.swapped_t != self.t \
+                and self.step_target(other.pos, other.heading) == tuple(me.pos):
+            # Two agents walking into each other trade places, so a 1-wide tunnel never jams.
+            other.pos, me.pos = list(me.pos), list(tgt)
+            other.swapped_t = self.t
+            return True
+        if self._occupied(*tgt) or self._occupied(tgt[0], tgt[1] + 1, tgt[2]):
             return False
         self.pos = list(tgt)
         return True
@@ -276,6 +374,47 @@ class World:
                                "hp": self.cfg.creatures.health[kind]})
         self._next_id += 1
 
+    def _roof(self) -> np.ndarray:
+        """Per (z, x) column, the y of the highest block that shuts out the sky (solid, not
+        leaves), or -1. A cell is covered when this is above its head (roof >= y + 2)."""
+        solid = _SOLID_ROOF[self.blocks]
+        any_ = solid.any(axis=0)
+        top = self.sy - 1 - np.argmax(solid[::-1], axis=0)
+        return np.where(any_, top, -1)
+
+    def covered(self, x: int, y: int, z: int) -> bool:
+        """Under a roof: dark at any time of day unless a torch is near."""
+        col = self.blocks[y + 2:, z, x]
+        return bool(_SOLID_ROOF[col].any()) if y + 2 < self.sy else False
+
+    def _dark_spawn_cell(self) -> Pos | None:
+        """A random covered, unlit open cell a zombie could stand in, between
+        zombie_dark_min_dist and zombie_spawn_max_dist (sideways) from the agent, or None."""
+        cc = self.cfg.creatures
+        ax, ay, az = self.pos
+        hi, lo = cc.zombie_spawn_max_dist, cc.zombie_dark_min_dist
+        x0, x1 = max(0, ax - hi), min(self.sx, ax + hi + 1)
+        z0, z1 = max(0, az - hi), min(self.sz, az + hi + 1)
+        b = self.blocks[:, z0:z1, x0:x1]
+        air = b == AIR
+        ok = np.zeros_like(air)
+        ok[1:-1] = air[1:-1] & air[2:] & _SUPPORT_ARR[b[:-2]]          # feet, head free, floor below
+        roof = self._roof()[z0:z1, x0:x1]
+        ys = np.arange(self.sy)[:, None, None]
+        ok &= roof[None] >= ys + 2
+        zs = np.arange(z0, z1)[None, :, None]
+        xs = np.arange(x0, x1)[None, None, :]
+        ok &= np.maximum(np.abs(xs - ax), np.abs(zs - az)) >= lo
+        if not ok.any():
+            return None
+        torches = self.find("torch")
+        cells = [(int(x + x0), int(y), int(z + z0)) for y, z, x in np.argwhere(ok)]
+        cells = [p for p in cells if not self._occupied(*p)
+                 and not any(cheb(p, tp) <= max(cc.torch_radius, self.cfg.torch_light) for tp in torches)]
+        if not cells:
+            return None
+        return cells[int(self.rng.integers(len(cells)))]
+
     def _surface(self, x: int, z: int) -> int | None:
         """y of the open cell on top of the column, or None if the top is water."""
         col = self.blocks[:, z, x]
@@ -302,8 +441,7 @@ class World:
             fell += 1
         if not SUPPORT[self.bid(nx, ny - 1, nz)] or (fell > 3 and c["kind"] != "zombie"):
             return None                                       # creatures stay out of water
-        ax, ay, az = self.pos
-        if (nx, nz) == (ax, az) and ny in (ay, ay + 1):
+        if self._any_agent_in(nx, ny, nz):
             return None
         if self._occupied(nx, ny, nz):
             return None
@@ -311,7 +449,7 @@ class World:
 
     def _creatures_tick(self, tod: int) -> None:
         cc = self.cfg.creatures
-        ax, ay, az = self.pos
+        bodies = self.living()
         for c in self.creatures:                              # list order is id order
             x, y, z = c["pos"]
             while y > 0 and CREATURE_PASS[self.bid(x, y - 1, z)]:
@@ -322,8 +460,9 @@ class World:
                 e = cc.zombie_step_every
                 if int(self.t / e) == int((self.t - 1) / e):
                     continue
-                if cheb(c["pos"], self.pos) <= cc.zombie_chase_dist:
-                    ddx, ddz = ax - x, az - z
+                prey = min(bodies, key=lambda b: (cheb(c["pos"], b.pos), b.id or 0)) if bodies else None
+                if prey is not None and cheb(c["pos"], prey.pos) <= cc.zombie_chase_dist:
+                    ddx, ddz = prey.pos[0] - x, prey.pos[2] - z
                     east = ("east" if ddx > 0 else "west", ddx)
                     south = ("south" if ddz > 0 else "north", ddz)
                     pair = (east, south) if abs(ddx) >= abs(ddz) else (south, east)
@@ -348,7 +487,13 @@ class World:
                 if tgt:
                     c["pos"] = list(tgt)
 
-        night = tod >= self.cfg.night_start
+        if not bodies:
+            return
+        me = self.me
+        # Spawns are placed around one agent: the only one, or one picked at random.
+        self.me = bodies[int(self.rng.integers(len(bodies)))] if len(bodies) > 1 else bodies[0]
+        ax, ay, az = self.pos
+        night = tod >= self.cfg.night_start or self.weather == "storm"
         n_z = sum(c["kind"] == "zombie" for c in self.creatures)
         if night and n_z < cc.zombie_max and self.rng.random() < cc.zombie_spawn_prob:
             torches = self.find("torch")
@@ -365,18 +510,29 @@ class World:
                     continue
                 self._spawn("zombie", (x, y, z))
                 break
+        # Under a roof it is dark at any hour: zombies can come up out of the agent's own tunnels.
+        n_z = sum(c["kind"] == "zombie" for c in self.creatures)
+        if cc.zombie_dark_spawn_prob > 0 and n_z < cc.zombie_max and self.rng.random() < cc.zombie_dark_spawn_prob:
+            cell = self._dark_spawn_cell()
+            if cell is not None:
+                self._spawn("zombie", cell)
 
-        if self.health > 0 and self.t - self._last_hit >= cc.zombie_cooldown:
-            for c in self.creatures:
-                if c["kind"] != "zombie":
-                    continue
-                x, y, z = c["pos"]
-                beside = abs(x - ax) + abs(z - az) == 1 and y in (ay, ay + 1)
-                above = (x, z) == (ax, az) and y == ay + 2
-                if beside or above:
-                    self._damage(self._armored(cc.zombie_damage), "zombie")
-                    self._last_hit = self.t
-                    break
+        for b in bodies:
+            self.me = b
+            ax, ay, az = self.pos
+            if self.health > 0 and self.t - self._last_hit >= cc.zombie_cooldown:
+                for c in self.creatures:
+                    if c["kind"] != "zombie":
+                        continue
+                    x, y, z = c["pos"]
+                    beside = abs(x - ax) + abs(z - az) == 1 and y in (ay, ay + 1)
+                    above = (x, z) == (ax, az) and y == ay + 2
+                    if beside or above:
+                        self._hits.append(T.HIT_YOU.format(kind=self.dn("zombie").capitalize(), id=c["id"], x=x, y=y, z=z))
+                        self._damage(self._armored(cc.zombie_damage), "zombie")
+                        self._last_hit = self.t
+                        break
+        self.me = me
 
     def _armored(self, n: int) -> int:
         """Zombie damage after armor. Each piece held takes off its points (at least 1 gets
@@ -421,7 +577,16 @@ class World:
     def _reset_vitals(self) -> None:
         v = self.cfg.vitals
         self.health, self.food, self.air = v.max_health, v.max_food, v.max_air
-        self._food_tick = self._starve_tick = self._heal_tick = 0
+        self._food_tick = self._starve_tick = self._heal_tick = self._hail_tick = 0
+        # (t, health, food) per world step since the last (re)spawn, for the trend in the observation.
+        self._vitals_log: deque = deque([(self.t, self.health, self.food)], maxlen=self.cfg.vitals_lookback + 1)
+
+    def vitals_before(self) -> tuple[int, int, int] | None:
+        """(t, health, food) vitals_lookback steps ago, or at the last (re)spawn if that is later.
+        None when there is no earlier step to compare with."""
+        if self.cfg.vitals_lookback <= 0 or self._vitals_log[0][0] >= self.t:
+            return None
+        return self._vitals_log[0]
 
     def vitals(self) -> dict:
         return {"health": self.health, "food": self.food, "air": self.air}
@@ -434,12 +599,25 @@ class World:
         self._cause = cause
         self._event("hurt", {"cause": cause, "amount": n})
 
+    def wet(self) -> bool:
+        """Rain or a storm, and nothing solid over the agent's head."""
+        return self.weather != "clear" and not self.covered(*self.pos)
+
     def _vitals_tick(self) -> None:
-        v = self.cfg.vitals
-        self._food_tick += 1
+        v, w = self.cfg.vitals, self.cfg.weather
+        wet = self.wet()
+        self._food_tick += w.rain_food_mult if wet else 1
         if self._food_tick >= v.food_drain_every:
             self._food_tick = 0
             self.food = max(0, self.food - 1)
+        if wet and self.weather == "storm":
+            self._hail_tick += 1
+            if self._hail_tick >= w.hail_every:
+                self._hail_tick = 0
+                self._hits.append(T.HAIL_HIT)
+                self._damage(w.hail_damage, "hail")
+        else:
+            self._hail_tick = 0
         if self.food == 0:
             self._starve_tick += 1
             if self._starve_tick >= v.starve_every:
@@ -447,9 +625,13 @@ class World:
                 self._damage(1, "hunger")
         else:
             self._starve_tick = 0
-        if self.food >= v.heal_food_min and self.health < v.max_health:
+        if self._asleep:
+            can_heal, every = self.food > 0, self.cfg.sleep_heal_every
+        else:
+            can_heal, every = self.food >= v.heal_food_min and not wet, v.heal_every
+        if can_heal and self.health < v.max_health:
             self._heal_tick += 1
-            if self._heal_tick >= v.heal_every:
+            if self._heal_tick >= every:
                 self._heal_tick = 0
                 self.health += 1
         else:
@@ -463,18 +645,71 @@ class World:
         else:
             self.air = v.max_air
 
-    def light(self) -> str:
+    def _sky_level(self, weather: bool = True) -> int:
+        """2 bright, 1 dim, 0 dark. A storm makes the sky dark at any hour; weather=False gives
+        the level by time of day alone."""
         c = self.cfg
+        if weather and self.weather == "storm":
+            return 0
         tod = self.t % c.day_length
         if tod < c.night_start - c.dim_steps:
-            level = 2
-        elif tod < c.night_start or tod >= c.day_length - c.dim_steps:
-            level = 1
-        else:
-            level = 0
+            return 2
+        if tod < c.night_start or tod >= c.day_length - c.dim_steps:
+            return 1
+        return 0
+
+    def _weather_tick(self) -> None:
+        """Draw the next weather at the start of each spell. The first spell is always clear."""
+        w = self.cfg.weather
+        if not w.enabled or self.t % w.spell:
+            return
+        r = self._weather_rng.random()
+        new = "storm" if r < w.storm_prob else "rain" if r < w.storm_prob + w.rain_prob else "clear"
+        if new != self.weather:
+            self.weather = new
+            self._event("weather", {"weather": new})
+
+    def _crops_tick(self) -> None:
+        """Each sprout grows one step, two in rain or a storm with nothing solid above it, and
+        turns into wheat at grow_steps."""
+        grow = self.cfg.farming.grow_steps
+        for p in list(self.crops):
+            x, y, z = p
+            if self.bid(*p) != defs.SPROUT:
+                del self.crops[p]
+                continue
+            rained = self.weather != "clear" and not _SOLID_ROOF[self.blocks[y + 1:, z, x]].any()
+            self.crops[p] += 2 if rained else 1
+            if self.crops[p] >= grow:
+                del self.crops[p]
+                self.set_block(*p, "wheat")
+
+    def sky(self) -> str:
+        """The light of the open sky by time of day, wherever the agent is."""
+        return LIGHTS[self._sky_level()]
+
+    def open_beside(self) -> list[tuple[str, Pos]]:
+        """Cells touching the body that are not solid, where a zombie could reach it: the four
+        sides at feet and at head level, and the cell above the head."""
         x, y, z = self.pos
-        if y + 2 < self.sy and any(SUPPORT[int(b)] and b != ID["leaves"] for b in self.blocks[y + 2:, z, x]):
-            level = max(0, level - 1)
+        out = []
+        for level, yy in (("feet", y), ("head", y + 1)):
+            for d in defs.HORIZONTAL:
+                dx, _, dz = DIRS[d]
+                p = (x + dx, yy, z + dz)
+                if self.inb(*p) and AGENT_PASS[self.bid(*p)]:
+                    out.append((f"{level} {d}", p))
+        p = (x, y + 2, z)
+        if self.inb(*p) and AGENT_PASS[self.bid(*p)]:
+            out.append(("above head", p))
+        return out
+
+    def light(self) -> str:
+        c = self.cfg
+        level = self._sky_level()
+        x, y, z = self.pos
+        if self.covered(x, y, z):                     # under a roof it is dark at any hour
+            level = 0
         if level == 0:
             r = c.torch_light
             box = self.blocks[max(0, y - r):y + r + 1, max(0, z - r):z + r + 1, max(0, x - r):x + r + 1]
@@ -489,6 +724,8 @@ class World:
     # ----------------------------------------------------------------- tick
 
     def _event(self, kind: str, detail: dict) -> None:
+        if self.multi and kind not in WORLD_EVENTS:
+            detail = {**detail, "agent": self.me.id}
         self._events.append({"t": self.t, "type": kind, "detail": detail})
 
     def _first(self, group: str, name: str, key: str) -> None:
@@ -501,29 +738,65 @@ class World:
         c = self.cfg
         self.t += 1
         tod = self.t % c.day_length
+        self._weather_tick()
+        if tod < c.night_start and self.weather != "storm":   # daylight: zombies out under the open sky are gone
+            self.creatures = [k for k in self.creatures if k["kind"] != "zombie" or self.covered(*k["pos"])]
         if tod == 0:
-            self.creatures = [k for k in self.creatures if k["kind"] != "zombie"]
             self._event("day_start", {"day": self.day})
             self._respawn_passives()
         elif tod == c.night_start:
             self._event("night_start", {"day": self.day})
         for due in [r for r in self.regrow if r[0] <= self.t]:
             _, x, y, z = due
-            if self.bid(x, y, z) == AIR and not self._occupied(x, y, z) and not self._agent_in(x, y, z):
+            if self.bid(x, y, z) == AIR and not self._occupied(x, y, z) and not self._any_agent_in(x, y, z):
                 self.set_block(x, y, z, "berry bush")
                 self.regrow.remove(due)
             else:
                 due[0] = self.t + 10
+        self._crops_tick()
 
-        pos, fell = self.settle(self.pos)
-        self.pos = list(pos)
-        if fell > c.vitals.fall_safe and self.bid(*pos) != WATER:
-            self._damage(fell - c.vitals.fall_safe, "fall")
-        self._vitals_tick()
+        me = self.me
+        bodies = self.living()
+        for b in bodies:
+            self.me = b
+            pos, fell = self.settle(self.pos)
+            self.pos = list(pos)
+            if fell > c.vitals.fall_safe and self.bid(*pos) != WATER:
+                self._damage(fell - c.vitals.fall_safe, "fall")
+            self._vitals_tick()
+        self._apply_strikes()
+        self.me = me
         self._creatures_tick(tod)
-        if self.health <= 0:
-            self._die()
+        for b in bodies:
+            self.me = b
+            if self.health <= 0:
+                self._die()
+            self._vitals_log.append((self.t, self.health, self.food))
+        self.me = me
         self._deltas.append(self._delta())
+
+    def _apply_strikes(self) -> None:
+        """Agent-on-agent hits from this step, all at once, so the order agents acted in gives no
+        edge and two agents can kill each other. Armor works as against zombies."""
+        strikes, self._strikes = self._strikes, []
+        for target, dmg, attacker in strikes:
+            if not target.alive or target.health <= 0:
+                continue
+            self.me = target
+            ax, ay, az = attacker.pos
+            self._hits.append(T.HIT_YOU.format(kind=self.dn("agent").capitalize(), id=attacker.id, x=ax, y=ay, z=az))
+            self._damage(self._armored(dmg), "agent")
+            if self.health <= 0:
+                self.me = attacker
+                self._event("kill", {"kind": "agent", "id": target.id})
+                if self.cfg.pvp_loot:
+                    for item, n in list(target.inv.items()):
+                        got = next((m for m in range(n, 0, -1) if self._fits({item: m})), 0)
+                        if got:
+                            uses = target.tools.get(item)
+                            self._add(item, got)
+                            if uses is not None and item not in self.tools:
+                                self.tools[item] = uses
 
     def _agent_in(self, x: int, y: int, z: int) -> bool:
         ax, ay, az = self.pos
@@ -540,7 +813,7 @@ class World:
                     x, z = int(self.rng.integers(3, self.sx - 3)), int(self.rng.integers(3, self.sz - 3))
                     y = self._surface(x, z)
                     if (y is not None and self.bid(x, y - 1, z) == ID["grass"] and not self._occupied(x, y, z)
-                            and not self._agent_in(x, y, z)):
+                            and not self._any_agent_in(x, y, z)):
                         self._spawn(kind, (x, y, z))
                         break
 
@@ -550,14 +823,45 @@ class World:
         self.deaths += 1
         self._event("death", {"cause": cause, "pos": list(self.pos)})
         if self.cfg.on_death == "end_run":
-            self.done = True
             self._death_notice = T.DIED_END.format(cause=self.dn(cause))
+            if self.multi:                            # out of the world; the others go on
+                self.me.alive = False
+                self.done = not self.living()
+            else:
+                self.done = True
             return
-        self.pos = list(self._respawn_cell())
+        at_bed = self._bed_cell()
+        self.pos = list(at_bed or self._respawn_cell())
         self.inv, self.tools = {}, {}
+        if self.cfg.on_death == "respawn_wipe_memory":
+            self.made = {}
         self._reset_vitals()
-        self._death_notice = T.DIED_RESPAWN.format(cause=self.dn(cause))
+        if at_bed:
+            bx, by, bz = self.bed
+            self._death_notice = T.DIED_RESPAWN_BED.format(cause=self.dn(cause), bed=self.dn("bed"), x=bx, y=by, z=bz)
+        else:
+            self._death_notice = T.DIED_RESPAWN.format(cause=self.dn(cause))
         self._event("respawn", {"pos": list(self.pos)})
+
+    def _bed_cell(self) -> Pos | None:
+        """A dry standing cell beside the respawn bed, nearest first, or None if there is no bed
+        any more (it was broken) or no room beside it."""
+        if self.bed is None or self.bid(*self.bed) != defs.BED:
+            self.bed = None
+            return None
+        bx, by, bz = self.bed
+        for r in (1, 2):
+            for dy in (0, 1, -1, 2, -2):
+                for x in range(bx - r, bx + r + 1):
+                    for z in range(bz - r, bz + r + 1):
+                        y = by + dy
+                        if max(abs(x - bx), abs(z - bz)) != r or not self.inb(x, y, z) or y < 1:
+                            continue
+                        if (self.bid(x, y, z) != WATER and AGENT_PASS[self.bid(x, y, z)]
+                                and AGENT_PASS[self.bid(x, y + 1, z)] and SUPPORT[self.bid(x, y - 1, z)]
+                                and not self._occupied(x, y, z) and not self._occupied(x, y + 1, z)):
+                            return (x, y, z)
+        return None
 
     def _respawn_cell(self) -> Pos:
         """The start point, on top of anything built over it. If the start column has been dug
@@ -620,7 +924,7 @@ class World:
         now = self.trapped()
         if now and not self.stuck:
             self._event("stuck", {"pos": list(self.pos)})
-            if self.cfg.on_stuck == "end_run":
+            if self.cfg.on_stuck == "end_run" and not self.multi:
                 self.done = True
         self.stuck = now
 
@@ -632,23 +936,43 @@ class World:
             return StepResult(T.NOTHING, 0, False, None)
         self._deltas, self._events = [], []
         self._hurt, self._died = False, None
+        self._hits = []
         self._death_notice = None
         if self._notice_shown:
             self._notice, self._notice_shown = None, False
         t0 = self.t
-        name = action.get("name") if isinstance(action, dict) else None
-        handler = {"move": self._move, "mine": self._mine, "place": self._place, "craft": self._craft,
-                   "eat": self._eat, "attack": self._attack, "wait": self._wait,
-                   "store": self._store, "take": self._take_from, "drop": self._drop}.get(name if isinstance(name, str) else "")
-        if handler is None:
-            text, valid, desc = T.UNKNOWN_ACTION, False, _clean(name) or "none"
-        else:
-            text, valid, desc = handler(action)
+        text, valid, desc = self._run(self.activity(action))
         if self.t == t0:
             self._tick()
         self._check_stuck()
+        text += "".join(self._hits)
         self.last_action, self.last_result = desc, text
         return StepResult(text, self.t - t0, valid, self._died, self._deltas, self._events)
+
+    def activity(self, action):
+        """The action as a generator: it yields once per world step it needs and returns
+        (result text, valid, description). Nothing happens until it is stepped."""
+        name = action.get("name") if isinstance(action, dict) else None
+        handler = {"move": self._move, "mine": self._mine, "place": self._place, "craft": self._craft,
+                   "eat": self._eat, "attack": self._attack, "wait": self._wait,
+                   "store": self._store, "take": self._take_from, "drop": self._drop,
+                   "jump": self._jump, "sleep": self._sleep, "say": self._say, "give": self._give,
+                   }.get(name if isinstance(name, str) else "")
+        return handler(action) if handler else self._unknown(name)
+
+    def _unknown(self, name):
+        return T.UNKNOWN_ACTION, False, _clean(name) or "none"
+        yield                                         # never reached: makes this a generator
+
+    def _run(self, activity) -> tuple[str, bool, str]:
+        """Drive an action to its end in a world of its own: one world tick at each yield.
+        (The multi-agent engine instead steps every body's activity once per shared tick.)"""
+        try:
+            while True:
+                next(activity)
+                self._tick()
+        except StopIteration as e:
+            return e.value
 
     def _stop(self) -> bool:
         return self._hurt or self._died is not None or self.done
@@ -659,13 +983,23 @@ class World:
         if d not in DIRS or n is None or not 1 <= n <= 8:
             return T.BAD_ARGS, False, desc
         seen = {c["id"] for c in self.visible_creatures()}
+        self.me.heading = d
+        try:
+            text = yield from self._walk(d, n, seen)
+        finally:
+            self.me.heading = None
+        return text, True, desc
+
+    def _walk(self, d: str, n: int, seen: set):
         moved, blocked = 0, ""
         for _ in range(n):
             before = list(self.pos)
             if not self._move_once(d) and d not in ("up", "down"):
                 blocked = self._blockers(d)                   # read before the tick moves creatures
-            self._tick()
+            yield
             ok = self.pos != before
+            if ok:
+                blocked = ""                                  # moved after all: swapped with an agent
             moved += ok
             if not ok or self._stop():
                 break
@@ -676,9 +1010,9 @@ class World:
         if moved == 0:
             x, y, z = self.pos
             if d in ("up", "down") and self.bid(x, y, z) != WATER and not (d == "down" and self.bid(x, y - 1, z) == WATER):
-                return T.NOT_MOVED_DRY, True, desc
-            return T.NOT_MOVED + blocked, True, desc
-        return T.MOVED.format(n=moved, cells="cell" if moved == 1 else "cells", dir=d) + blocked, True, desc
+                return T.NOT_MOVED_DRY
+            return T.NOT_MOVED + blocked
+        return T.MOVED.format(n=moved, cells="cell" if moved == 1 else "cells", dir=d) + blocked
 
     def _blockers(self, d: str) -> str:
         """What stopped a sideways step, as " Blocked by ..." text, or "" at the world's edge.
@@ -701,7 +1035,7 @@ class World:
                   for p in cells if self.inb(*p) and not AGENT_PASS[self.bid(*p)]]
         if not things:                                        # the cells are free: a creature is in the way
             tgt = self.step_target(self.pos, d)
-            things = [T.BLOCKED_CREATURE.format(kind=self.dn(c["kind"]), id=c["id"]) for c in self.creatures
+            things = [T.BLOCKED_CREATURE.format(kind=self.dn(c["kind"]), id=c["id"]) for c in self.creatures + self.others()
                       if tgt and c["pos"][0] == tgt[0] and c["pos"][2] == tgt[2] and c["pos"][1] in (tgt[1], tgt[1] + 1)]
         return T.BLOCKED_BY.format(things=" and ".join(things)) if things else ""
 
@@ -721,34 +1055,80 @@ class World:
             return T.NOTHING_THERE, False, desc
         n = self.mine_steps(block)
         if n is None or not self.exposed(*p):
-            self._tick()
+            yield
             return T.NOT_BROKEN, True, desc
         if self.chests.get(tuple(p)):
-            self._tick()
+            yield
             return T.CHEST_NOT_EMPTY.format(chest=self.dn("chest")), True, desc
         item = defs.DROPS.get(block, block)
-        count = self.cfg.berries_per_bush if block == "berry bush" else 1
+        count = {"berry bush": self.cfg.berries_per_bush, "wheat": self.cfg.farming.wheat_per_crop}.get(block, 1)
         if not self._fits({item: count}):
-            self._tick()
+            yield
             return T.NO_ROOM, True, desc
         for k in range(n):
             if k == n - 1:
                 break
-            self._tick()
+            yield
             if self._stop():
                 return T.NOT_BROKEN, True, desc
         self.set_block(*p, "air")
         self.chests.pop(tuple(p), None)
+        self.crops.pop(tuple(p), None)
+        if tuple(p) == self.bed:
+            self.bed = None
         self._add(item, count)
         if block == "berry bush":
             self.regrow.append([self.t + 1 + self.cfg.bush_regrow, *p])
         self._first("mine", block, "block")
         text = T.GOT.format(n=count, item=self.dn(item))
+        seeds = self._seed_drop(block)
+        if seeds:
+            got = next((m for m in range(seeds, 0, -1) if self._fits({"seeds": m})), 0)
+            if got:
+                self._add("seeds", got)
+                text += " " + T.GOT.format(n=got, item=self.dn("seeds"))
+            if got < seeds:
+                text += T.NO_ROOM_FOR.format(n=seeds - got, item=self.dn("seeds"))
         pick = self._best_pick()
         if pick and self._wear(pick):
             text += T.TOOL_BROKE.format(tool=self.dn(pick))
-        self._tick()
+        yield
         return text, True, desc
+
+    def _seed_drop(self, block: str) -> int:
+        """Seeds that come with a broken block, besides the block's own item."""
+        f = self.cfg.farming
+        if block == "grass":
+            return int(self._farm_rng.random() < f.seed_chance)
+        if block == "wheat":
+            return f.seeds_per_crop + int(self._farm_rng.random() < f.seed_bonus_chance)
+        return 0
+
+    def _water_near(self, p: Pos) -> bool:
+        r = self.cfg.farming.water_dist
+        if r <= 0:
+            return True
+        x, y, z = p                                   # p is the planted cell; the soil is at y - 1
+        box = self.blocks[max(0, y - 3):y, max(0, z - r):z + r + 1, max(0, x - r):x + r + 1]
+        return bool((box == WATER).any())
+
+    def _plant(self, item: str, p: Pos, desc: str):
+        """Seeds go into an empty cell with soil under it and water near the soil."""
+        x, y, z = p
+        if self.bid(*p) != AIR:
+            return T.NOT_EMPTY, False, desc
+        if self.bid(x, y - 1, z) not in (ID[s] for s in defs.SOIL) or not self._water_near(p):
+            if not self.cfg.rule_notes:
+                return T.NOT_PLACED.format(item=self.dn(item)), True, desc
+            soil = " or ".join(self.dn(s) for s in defs.SOIL)
+            return T.NOT_PLANTED.format(item=self.dn(item), soil=soil, water=self.dn("water"),
+                                        r=self.cfg.farming.water_dist), True, desc
+        self.set_block(*p, defs.PLANTS[item])
+        self.crops[tuple(p)] = 0
+        self._take(item, 1)
+        self._first("place", item, "block")
+        yield
+        return T.PLACED.format(item=self.dn(item), x=x, y=y, z=z), True, desc
 
     def _place(self, a: dict):
         p = self._xyz(a)
@@ -758,18 +1138,22 @@ class World:
         item = self.internal(a["item"])
         if item is None or self.inv.get(item, 0) < 1:
             return T.NO_ITEM, False, desc
-        if item not in defs.PLACEABLE:
+        if item not in defs.PLACEABLE and item not in defs.PLANTS:
             return T.NOT_PLACED.format(item=self.dn(item)), False, desc
         if not self.inb(*p) or cheb(p, self.pos) > self.cfg.reach:
             return T.TOO_FAR, False, desc
-        if self.bid(*p) not in (AIR, WATER) or self._agent_in(*p) or self._occupied(*p):
+        if self._agent_in(*p):
+            return T.IN_YOUR_CELL, False, desc
+        if self.bid(*p) not in (AIR, WATER) or self._occupied(*p):
             return T.NOT_EMPTY, False, desc
+        if item in defs.PLANTS:
+            return (yield from self._plant(item, p, desc))
         self.set_block(*p, item)
         if item == "chest":
             self.chests[tuple(p)] = {}
         self._take(item, 1)
         self._first("place", item, "block")
-        self._tick()
+        yield
         return T.PLACED.format(item=self.dn(item), x=p[0], y=p[1], z=p[2]), True, desc
 
     def _craft(self, a: dict):
@@ -792,16 +1176,21 @@ class World:
         r = self.match_recipe(items)
         if r is None or not self.station_near(r.station):
             self._event("craft_fail", {"items": items})
-            self._tick()
-            return T.NOT_MADE, True, desc
+            yield
+            if not self.cfg.rule_notes:
+                return T.NOT_MADE, True, desc
+            if r is None:
+                return T.NOT_MADE_EXACT, True, desc
+            return T.NOT_MADE_STATION.format(station=self.dn(r.station), r=self.cfg.station_reach), True, desc
         if not self._fits({r.output: r.count}, items):
-            self._tick()
+            yield
             return T.NO_ROOM, True, desc
         for item, n in items.items():
             self._take(item, n)
         self._add(r.output, r.count)
+        self.made.setdefault(r.output, (dict(items), r.count))
         self._first("craft", r.output, "item")
-        self._tick()
+        yield
         return T.MADE.format(n=r.count, item=self.dn(r.output)), True, desc
 
     def _eat(self, a: dict):
@@ -810,12 +1199,12 @@ class World:
         if item is None or self.inv.get(item, 0) < 1:
             return T.NO_ITEM, False, desc
         if item not in self.cfg.food:
-            self._tick()
+            yield
             return T.NOT_EATEN.format(item=self.dn(item)), True, desc
         self._take(item, 1)
         self.food = min(self.cfg.vitals.max_food, self.food + self.cfg.food[item])
         self._first("eat", item, "item")
-        self._tick()
+        yield
         return T.ATE.format(item=self.dn(item)), True, desc
 
     def _attack(self, a: dict):
@@ -824,6 +1213,17 @@ class World:
             return T.BAD_ARGS, False, "attack"
         desc = f"attack #{cid}"
         c = next((k for k in self.creatures if k["id"] == cid), None)
+        target = self.body(cid) if c is None else None
+        if target is not None and target is not self.me and target.alive:
+            if cheb(target.pos, self.pos) > self.cfg.attack_reach:
+                return T.NO_CREATURE.format(id=cid), False, desc
+            sword = self._best_sword()
+            self._strikes.append((target, self.cfg.sword_damage[sword] if sword else self.cfg.hand_damage, self.me))
+            text = T.HIT.format(kind=self.dn("agent"), id=cid)
+            if sword and self._wear(sword):
+                text += T.TOOL_BROKE.format(tool=self.dn(sword))
+            yield
+            return text, True, desc
         if c is None or cheb(c["pos"], self.pos) > self.cfg.attack_reach:
             return T.NO_CREATURE.format(id=cid), False, desc
         sword = self._best_sword()
@@ -842,9 +1242,16 @@ class World:
                 text += " " + T.GOT.format(n=got, item=self.dn("raw meat"))
             if got < meat:
                 text += T.NO_ROOM_FOR.format(n=meat - got, item=self.dn("raw meat"))
+            wool = self.cfg.creatures.wool.get(c["kind"], 0)
+            got = next((m for m in range(wool, 0, -1) if self._fits({"wool": m})), 0)
+            if got:
+                self._add("wool", got)
+                text += " " + T.GOT.format(n=got, item=self.dn("wool"))
+            if got < wool:
+                text += T.NO_ROOM_FOR.format(n=wool - got, item=self.dn("wool"))
         if sword and self._wear(sword):
             text += T.TOOL_BROKE.format(tool=self.dn(sword))
-        self._tick()
+        yield
         return text, True, desc
 
     def _items_arg(self, raw) -> dict[str, int] | None:
@@ -907,7 +1314,7 @@ class World:
             chest.clear()
             chest.update(after)
             text = T.STORED.format(items=self._items_text(items))
-        self._tick()
+        yield
         return text, True, desc
 
     def _take_from(self, a: dict):
@@ -927,7 +1334,7 @@ class World:
                     del chest[i]
                 self._add(i, n)
             text = T.TOOK.format(items=self._items_text(items))
-        self._tick()
+        yield
         return text, True, desc
 
     def _drop(self, a: dict):
@@ -940,8 +1347,90 @@ class World:
             return missing, False, desc
         for i, n in items.items():
             self._take(i, n)
-        self._tick()
+        yield
         return T.DROPPED.format(items=self._items_text(items)), True, desc
+
+    def _jump(self, a: dict):
+        """Up one cell and the item into the cell the feet left, so the agent stands on it.
+        Needs the cell above the head free and an item that can be stood on."""
+        if not isinstance(a.get("item"), str):
+            return T.BAD_ARGS, False, "jump"
+        desc = "jump " + _clean(a["item"])
+        item = self.internal(a["item"])
+        if item is None or self.inv.get(item, 0) < 1:
+            return T.NO_ITEM, False, desc
+        if item not in defs.PLACEABLE or not SUPPORT[ID[item]]:
+            return T.NOT_PLACED.format(item=self.dn(item)), False, desc
+        x, y, z = self.pos
+        top = (x, y + 2, z)
+        if not self.inb(*top):
+            return T.NOT_MOVED, True, desc
+        if not AGENT_PASS[self.bid(*top)]:
+            return T.NOT_MOVED + T.BLOCKED_BY.format(things=T.BLOCKED_CELL.format(
+                name=self.dn(self.block(*top)), x=top[0], y=top[1], z=top[2])), True, desc
+        blockers = [c for c in self.creatures + self.others()
+                    if c["pos"][0] == x and c["pos"][2] == z and c["pos"][1] in (y + 1, y + 2)]
+        if blockers:
+            return T.NOT_MOVED + T.BLOCKED_BY.format(things=", ".join(
+                T.BLOCKED_CREATURE.format(kind=self.dn(c["kind"]), id=c["id"]) for c in blockers)), True, desc
+        self.pos = [x, y + 1, z]
+        self.set_block(x, y, z, item)
+        if item == "chest":
+            self.chests[(x, y, z)] = {}
+        self._take(item, 1)
+        self._first("place", item, "block")
+        yield
+        return T.JUMPED.format(item=self.dn(item), x=x, y=y, z=z), True, desc
+
+    def _say(self, a: dict):
+        """Words to every other agent within hear_radius, in their next observation."""
+        raw = a.get("text")
+        if not isinstance(raw, str) or not " ".join(raw.split()):
+            return T.BAD_ARGS, False, "say"
+        text = " ".join(raw.split())[:self.cfg.say_max_chars].replace('"', "'")
+        desc = f'say "{text[:40]}"'
+        x, y, z = self.pos
+        heard = [b for b in self.bodies if b is not self.me and b.alive and cheb(b.pos, self.pos) <= self.cfg.hear_radius]
+        for b in heard:
+            b.heard.append(T.OBS_SAID.format(id=self.me.id, x=x, y=y, z=z, text=text))
+        self._event("say", {"text": text, "heard": [b.id for b in heard]})
+        who = ", ".join(T.AGENT_REF.format(id=b.id) for b in heard)
+        yield
+        return T.SAID.format(text=text) + (T.HEARD_BY.format(who=who) if heard else T.HEARD_BY_NONE), True, desc
+
+    def _give(self, a: dict):
+        """Items from this inventory into another agent's, if it is within reach and they fit."""
+        cid, items = _int(a.get("id")), self._items_arg(a.get("items"))
+        if cid is None or items is None:
+            return T.BAD_ARGS, False, "give"
+        desc = f"give agent #{cid} " + self._items_text(items)
+        target = self.body(cid)
+        if target is None or target is self.me or not target.alive or cheb(target.pos, self.pos) > self.cfg.reach:
+            return T.NO_AGENT.format(id=cid, r=self.cfg.reach), False, desc
+        missing = self._have(items)
+        if missing:
+            return missing, False, desc
+        me = self.me
+        self.me = target
+        fits = self._fits(items)
+        self.me = me
+        if not fits:
+            yield
+            return T.NO_ROOM_THEIRS.format(id=cid), True, desc
+        uses = {i: self.tools[i] for i in items if i in self.tools}
+        for i, n in items.items():
+            self._take(i, n)
+            self.me = target
+            had = i in self.tools
+            self._add(i, n)
+            if i in uses and not had:
+                self.tools[i] = uses[i]               # the tool keeps its wear
+            self.me = me
+        x, y, z = self.pos
+        target.heard.append(T.OBS_GIVEN.format(id=me.id, x=x, y=y, z=z, items=self._items_text(items)))
+        self._event("give", {"to": cid, "items": items})
+        yield
+        return T.GAVE.format(items=self._items_text(items), id=cid), True, desc
 
     def _wait(self, a: dict):
         n = _int(a.get("steps", 1))
@@ -950,11 +1439,48 @@ class World:
             return T.BAD_ARGS, False, desc
         done = 0
         for _ in range(n):
-            self._tick()
+            yield
             done += 1
             if self._stop():
                 break
         return T.WAITED.format(n=done, steps="step" if done == 1 else "steps"), True, desc
+
+    def _sleep(self, a: dict):
+        """With a bed within reach, from dusk to dawn and no zombie near: the world runs on until
+        dawn, or until the agent is hurt. The bed becomes the respawn point. Asleep with food
+        above 0, health rises every sleep_heal_every steps."""
+        desc = "sleep"
+        r = self.cfg.reach
+        x, y, z = self.pos
+        box = self.blocks[max(0, y - r):y + r + 1, max(0, z - r):z + r + 1, max(0, x - r):x + r + 1]
+        beds = [(int(bx) + max(0, x - r), int(by) + max(0, y - r), int(bz) + max(0, z - r))
+                for by, bz, bx in np.argwhere(box == defs.BED)]
+        if not beds:
+            return T.NO_BED.format(bed=self.dn("bed"), r=r), False, desc
+        bed = min(beds, key=lambda b: (cheb(b, self.pos), b))
+        if self._sky_level(weather=False) == 2:
+            return T.NOT_SLEPT_SKY, True, desc
+        near = sorted((c for c in self.creatures if c["kind"] == "zombie"
+                       and cheb(c["pos"], self.pos) <= self.cfg.sleep_zombie_dist),
+                      key=lambda c: (cheb(c["pos"], self.pos), c["id"]))
+        if near:
+            c = near[0]
+            return T.NOT_SLEPT_CREATURE.format(kind=self.dn("zombie").capitalize(), id=c["id"],
+                                               x=c["pos"][0], y=c["pos"][1], z=c["pos"][2]), True, desc
+        self.bed = bed
+        self._event("sleep", {"bed": list(bed)})
+        self._asleep = True
+        done = 0
+        try:
+            for _ in range(self.cfg.day_length):
+                yield
+                done += 1
+                if self._stop() or self.t % self.cfg.day_length == 0:
+                    break
+        finally:
+            self._asleep = False
+        return T.SLEPT.format(n=done, steps="step" if done == 1 else "steps", bed=self.dn("bed"),
+                              x=bed[0], y=bed[1], z=bed[2]), True, desc
 
     # ----------------------------------------------------- views of the state
 
@@ -962,15 +1488,25 @@ class World:
         from .observe import render
         if self._notice is not None:
             self._notice_shown = True
-        return render(self)
+        text = render(self)
+        self.me.heard = []                            # shown once
+        if self.multi:
+            self._death_notice = None                 # (one agent's step() clears it before acting)
+        return text
 
     def set_notice(self, text: str | None) -> None:
         """Extra line shown in the next observation, then dropped."""
         self._notice, self._notice_shown = text, False
 
-    def _agent_dict(self) -> dict:
-        return {"pos": list(self.pos), "health": self.health, "food": self.food, "air": self.air,
-                "inventory": dict(self.inv), "tools": dict(self.tools)}
+    def _agent_dict(self, b: Body | None = None) -> dict:
+        b = b or self.bodies[0]
+        return {"pos": list(b.pos), "health": b.health, "food": b.food, "air": b.air,
+                "inventory": dict(b.inv), "tools": dict(b.tools)}
+
+    def _agents_list(self) -> list[dict]:
+        """Multi-agent: every body, with its id, name and whether it is still in the world."""
+        return [{"id": b.id, "name": b.name, "alive": b.alive, "bed": list(b.bed) if b.bed else None,
+                 **self._agent_dict(b)} for b in self.bodies]
 
     def _creature_list(self) -> list[dict]:
         return [{"id": c["id"], "kind": c["kind"], "pos": list(c["pos"])} for c in self.creatures]
@@ -978,8 +1514,10 @@ class World:
     def _delta(self) -> dict:
         blocks = [[x, y, z, name] for (x, y, z), name in self._changed.items()]
         self._changed = {}
-        return {"type": "step", "t": self.t, "blocks": blocks, "agent": self._agent_dict(),
-                "creatures": self._creature_list(), "chests": self._chest_list(), "light": self.light(), "day": self.day}
+        extra = {"agents": self._agents_list()} if self.multi else {}
+        return {"type": "step", "t": self.t, "blocks": blocks, "agent": self._agent_dict(), **extra,
+                "creatures": self._creature_list(), "chests": self._chest_list(), "light": self.light(), "day": self.day,
+                "weather": self.weather, "bed": list(self.bed) if self.bed else None}
 
     def _chest_list(self) -> list[list]:
         return [[x, y, z, dict(items)] for (x, y, z), items in sorted(self.chests.items())]
@@ -988,16 +1526,22 @@ class World:
         return {"type": "snapshot", "t": self.t, "size": [self.sx, self.sy, self.sz],
                 "sea_level": self.cfg.sea_level, "palette": list(BLOCKS),
                 "blocks_b64": base64.b64encode(zlib.compress(self.blocks.tobytes())).decode("ascii"),
-                "agent": self._agent_dict(), "creatures": self._creature_list(), "chests": self._chest_list(),
-                "light": self.light(), "day": self.day, "display_names": dict(self.display),
+                "agent": self._agent_dict(), **({"agents": self._agents_list()} if self.multi else {}),
+                "creatures": self._creature_list(), "chests": self._chest_list(),
+                "light": self.light(), "day": self.day, "weather": self.weather,
+                "bed": list(self.bed) if self.bed else None, "display_names": dict(self.display),
                 "spawn": list(self.spawn)}
 
     def state_hash(self) -> str:
         state = {
             "t": self.t, "done": self.done, "stuck": self.stuck, "deaths": self.deaths, "agent": self._agent_dict(),
-            "ticks": [self._food_tick, self._starve_tick, self._heal_tick, self._last_hit],
+            "agents": [[b.id, b.alive, b.deaths, b.heard, b._food_tick, b._starve_tick, b._heal_tick, b._hail_tick,
+                        b._last_hit, b.last_result, b.made, b.firsts, list(b.bed or ())] for b in self.bodies[1:]],
+            "ticks": [self._food_tick, self._starve_tick, self._heal_tick, self._hail_tick, self._last_hit],
+            "weather": self.weather, "crops": sorted([list(p), n] for p, n in self.crops.items()),
+            "bed": self.bed, "rng2": [self._weather_rng.bit_generator.state, self._farm_rng.bit_generator.state],
             "creatures": self.creatures, "chests": self._chest_list(), "next_id": self._next_id, "regrow": self.regrow,
-            "firsts": self.firsts, "last": [self.last_action, self.last_result],
+            "firsts": self.firsts, "made": self.made, "last": [self.last_action, self.last_result],
             "notice": [self._notice, self._death_notice], "rng": self.rng.bit_generator.state,
         }
         h = hashlib.sha256(self.blocks.tobytes())
@@ -1021,9 +1565,17 @@ class World:
         spots = [(x0 + dx, y0 + dy, z0 + dz) for dx, dy, dz in
                  [(1, 0, 0), (-1, 0, 0), (0, 0, 1), (0, 0, -1), (1, 1, 0), (-1, 1, 0), (0, 1, 1), (0, 1, -1), (0, 2, 0)]]
         spots = [p for p in spots if self.inb(*p) and self.bid(*p) in (AIR, WATER) and not self._occupied(*p)]
+        head_room = self.inb(x0, y0 + 2, z0) and AGENT_PASS[self.bid(x0, y0 + 2, z0)] and not any(
+            c["pos"][0] == x0 and c["pos"][2] == z0 and c["pos"][1] in (y0 + 1, y0 + 2) for c in self.creatures)
         for item in self.inv:
             if item in defs.PLACEABLE:
                 out += [{"name": "place", "item": self.dn(item), "x": p[0], "y": p[1], "z": p[2]} for p in spots]
+                if head_room and SUPPORT[ID[item]]:
+                    out.append({"name": "jump", "item": self.dn(item)})
+            if item in defs.PLANTS:
+                out += [{"name": "place", "item": self.dn(item), "x": p[0], "y": p[1], "z": p[2]} for p in spots
+                        if self.bid(*p) == AIR and self.bid(p[0], p[1] - 1, p[2]) in (ID[s] for s in defs.SOIL)
+                        and self._water_near(p)]
             if item in self.cfg.food:
                 out.append({"name": "eat", "item": self.dn(item)})
         for rcp in self.recipes:
@@ -1040,5 +1592,12 @@ class World:
         for c in self.creatures:
             if cheb(c["pos"], self.pos) <= self.cfg.attack_reach:
                 out.append({"name": "attack", "id": c["id"]})
+        r = self.cfg.reach
+        if (self._sky_level(weather=False) < 2 and (self.blocks[max(0, y0 - r):y0 + r + 1, max(0, z0 - r):z0 + r + 1,
+                                                                max(0, x0 - r):x0 + r + 1] == defs.BED).any()):
+            out.append({"name": "sleep"})
         out += [{"name": "wait", "steps": n} for n in (1, 4, 8)]
         return out
+
+
+forward_body_fields(World)

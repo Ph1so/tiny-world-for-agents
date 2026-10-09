@@ -92,6 +92,8 @@ Every later line is one world step.
 
 `chests` (snapshot and every step line) is the full list of chests and what they hold: `[[x,y,z,{"stone":6}], ...]`, sorted by cell. Chests keep their contents when the agent dies.
 
+`weather` (snapshot and every step line) is `"clear"`, `"rain"` or `"storm"`. `bed` is the respawn bed `[x,y,z]` once the agent has slept in one, else null; it is kept through death and cleared when that bed is broken. Growing crops are `sprout` blocks in `blocks`/the palette; a ripe one turns into a `wheat` block.
+
 `blocks` lists only cells that changed this step. `creatures` is the full list each step. `inventory` maps item name to count. Tools appear as `"stone pickaxe": 1` and their wear is in `agent.tools`: `{"stone pickaxe": 41}` (uses left, for the one in use). `agent.tools` is in every step line and in the snapshot.
 
 Block, item, and creature names in world.jsonl are always familiar names.
@@ -150,9 +152,9 @@ cost_usd_total, longterm_chars}`, plus `source` for a line that was written by h
 {"t":413,"i":120,"type":"first_mine","detail":{"block":"stone"}}
 ```
 
-Types: `first_mine`, `first_craft`, `craft_fail`, `first_place`, `first_eat`, `death` (detail.cause is one of hunger, drowning, fall, zombie), `respawn`, `kill` (detail.kind), `hurt` (detail.cause), `night_start`, `day_start`, `tool_broke`, `memory_rejected`, `parse_fail`, `stuck`. Names in `detail` are familiar names.
+Types: `first_mine`, `first_craft`, `craft_fail`, `first_place`, `first_eat`, `death` (detail.cause is one of hunger, drowning, fall, zombie), `respawn`, `kill` (detail.kind), `hurt` (detail.cause), `night_start`, `day_start`, `tool_broke`, `weather`, `sleep`, `memory_rejected`, `parse_fail`, `stuck`. Causes of death and harm also include `hail`. Names in `detail` are familiar names.
 
-`detail` by type. `first_mine` `{block}`. `first_place` `{block}`. `first_craft` `{item}`. `first_eat` `{item}`. `craft_fail` `{items: {name: count}}`. `death` `{cause, pos}`. `respawn` `{pos}`. `stuck` `{pos}`. `kill` `{kind, id}`. `hurt` `{cause, amount}`. `night_start` and `day_start` `{day}`. `tool_broke` `{tool}`. `memory_rejected` and `parse_fail` come from the agent loop.
+`detail` by type. `first_mine` `{block}`. `first_place` `{block}`. `first_craft` `{item}`. `first_eat` `{item}`. `craft_fail` `{items: {name: count}}`. `death` `{cause, pos}`. `respawn` `{pos}`. `stuck` `{pos}`. `kill` `{kind, id}`. `hurt` `{cause, amount}`. `night_start` and `day_start` `{day}`. `tool_broke` `{tool}`. `weather` `{weather}` (only when it changes). `sleep` `{bed: [x,y,z]}` (a sleep that started). `memory_rejected` and `parse_fail` come from the agent loop.
 
 ### summary.json
 Written at the end of a run by `tinyworld.analysis.metrics`. Flat keys for the metrics in section 11 of PLAN.md, plus `run_id`, `seed`, `controller`, `model`, `memory_chars`, `history_window`, `names`, `world_steps`, `agent_steps`, `finished`.
@@ -203,3 +205,19 @@ step, so they also work on a run started from a shell (`touch runs/ID/pause`):
 | `pause` | wait before the next agent step until the file is removed |
 | `stop` | end after the current step without writing `summary.json` (resumable); the runner removes it |
 | `runner.pid` | written while a runner works on the folder, removed when it exits |
+
+
+## Multi-agent runs (tinyworld/runner/multi.py)
+
+Same folder, with these differences. `config.yaml` has `mode: multi`, `clock` (realtime |
+lockstep), `tick_ms`, and `agents`: one entry per agent with `id`, `name`, `controller` and the
+controller's settings. The world snapshot and every world step line add `agents`: a list of
+`{id, name, alive, bed, pos, health, food, air, inventory, tools}`; `agent` stays and is the first
+agent. A world line's `i` is the first agent's step under way. `steps.jsonl` and `memory.jsonl`
+lines carry `agent` (its id) and `i` counts that agent's steps; step lines add `t_obs` (the world
+step the observation was taken at; `t_start - t_obs` is time lost thinking) and `think_s`. Agent
+events carry `detail.agent`; world events (`day_start`, `night_start`, `weather`) do not. New
+events: `say` `{text, heard: [ids]}`, `give` `{to, items}`, `agent_error` `{error}`, and `kill`
+with `kind: "agent"`. New actions: `say {"text"}`, `give {"id", "items"}`; `attack` takes an agent
+id. `summary.json` has `mode: multi`, `world_steps`, `wall_clock_s`, `cost_usd_total` and per agent
+`agent_steps`, `deaths`, `items_crafted`, `cost_usd`.

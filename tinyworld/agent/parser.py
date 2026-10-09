@@ -108,7 +108,7 @@ def _objects(s: str):
         start = s.find("{", start + 1)
 
 
-ACTION_NAMES = {"move", "mine", "place", "craft", "eat", "attack", "wait", "store", "take", "drop"}
+ACTION_NAMES = {"move", "mine", "place", "craft", "eat", "attack", "wait", "store", "take", "drop", "jump", "sleep"}
 ACTION_ARGS = {"dir", "steps", "x", "y", "z", "item", "items", "id"}
 
 
@@ -208,7 +208,9 @@ def _salvage_tool_call_style(text: str, bare_action: dict | None = None) -> dict
     return None
 
 
-def parse_reply(text: str) -> Parsed:
+def parse_reply(text: str, memory_plain: str = "rewrite") -> Parsed:
+    """memory_plain "append" reads plain text in "memory" the way "longterm" is read (added
+    lines); "rewrite" keeps the snapshot coercion of normalize_memory."""
     if not isinstance(text, str) or not text.strip():
         return Parsed(False, error="empty reply")
     obj = extract_object(text)
@@ -220,7 +222,8 @@ def parse_reply(text: str) -> Parsed:
     thought = obj.get("thought", "")
     if not isinstance(thought, str):
         thought = json.dumps(thought)
-    ops = normalize_memory(obj.get("memory", []))
+    raw = obj.get("memory", [])
+    ops = normalize_longterm(raw) if memory_plain == "append" else normalize_memory(raw)
     return Parsed(True, thought=thought, memory_ops=ops, longterm_ops=normalize_longterm(obj.get("longterm", [])),
                   action=action)
 

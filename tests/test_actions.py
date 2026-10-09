@@ -182,6 +182,30 @@ def test_berry_bush_regrows(flat):
 
 # ----------------------------------------------------------------- place
 
+def test_jump_places_a_block_under_the_feet(flat):
+    flat._add("dirt", 3)
+    for i in range(3):                                     # a pillar, one jump at a time
+        r = flat.step({"name": "jump", "item": "dirt"})
+        assert r.text == T.JUMPED.format(item="dirt", x=32, y=10 + i, z=32) and r.steps == 1
+        assert flat.pos == [32, 11 + i, 32] and flat.block(32, 10 + i, 32) == "dirt"
+    assert "dirt" not in flat.inv
+    assert flat.step({"name": "jump", "item": "dirt"}).text == T.NO_ITEM
+
+
+def test_jump_needs_room_and_a_block_to_stand_on(flat):
+    flat._add("dirt", 1)
+    flat._add("torch", 1)
+    assert flat.step({"name": "jump", "item": "torch"}).text == T.NOT_PLACED.format(item="torch")
+    assert flat.step({"name": "jump"}).text == T.BAD_ARGS
+    flat.set_block(32, 12, 32, "stone")
+    r = flat.step({"name": "jump", "item": "dirt"})
+    assert r.text == T.NOT_MOVED + T.BLOCKED_BY.format(things="stone at (32,12,32)")
+    assert flat.pos == [32, 10, 32] and flat.inv["dirt"] == 1
+    assert {"name": "jump", "item": "dirt"} not in flat.valid_actions()
+    flat.set_block(32, 12, 32, "air")
+    assert {"name": "jump", "item": "dirt"} in flat.valid_actions()
+
+
 def test_place(flat):
     give(flat, planks=2, sticks=1)
     r = flat.step({"name": "place", "item": "planks", "x": 33, "y": 10, "z": 32})
@@ -190,7 +214,7 @@ def test_place(flat):
     assert r.deltas[0]["blocks"] == [[33, 10, 32, "planks"]]
     assert [e["type"] for e in r.events] == ["first_place"]
     assert flat.step({"name": "place", "item": "planks", "x": 33, "y": 10, "z": 32}).text == T.NOT_EMPTY
-    assert flat.step({"name": "place", "item": "planks", "x": 32, "y": 11, "z": 32}).text == T.NOT_EMPTY
+    assert flat.step({"name": "place", "item": "planks", "x": 32, "y": 11, "z": 32}).text == T.IN_YOUR_CELL
     assert flat.step({"name": "place", "item": "planks", "x": 40, "y": 10, "z": 32}).text == T.TOO_FAR
     assert flat.step({"name": "place", "item": "stone", "x": 31, "y": 10, "z": 32}).text == T.NO_ITEM
     r = flat.step({"name": "place", "item": "sticks", "x": 31, "y": 10, "z": 32})
@@ -229,8 +253,8 @@ def test_attack(flat):
     assert flat.step({"name": "attack", "id": cid}).text == f"Hit sheep #{cid}."
     flat.step({"name": "attack", "id": cid})
     r = flat.step({"name": "attack", "id": cid})
-    assert r.text == f"Hit sheep #{cid}. It is gone. Got 2 raw meat."
-    assert flat.inv == {"raw meat": 2} and flat.creatures == []
+    assert r.text == f"Hit sheep #{cid}. It is gone. Got 2 raw meat. Got 1 wool."
+    assert flat.inv == {"raw meat": 2, "wool": 1} and flat.creatures == []
     assert [e for e in r.events if e["type"] == "kill"][0]["detail"]["kind"] == "sheep"
     r = flat.step({"name": "attack", "id": cid})
     assert not r.valid and r.steps == 1
@@ -338,13 +362,59 @@ def test_light_levels_and_day_events(flat):
 
 
 def test_cover_and_torch_change_light(flat):
+    """Under a roof it is dark at any hour; a torch near turns dark into dim."""
     assert flat.light() == "bright"
+    flat.set_block(32, 13, 32, "leaves")
+    assert flat.light() == "bright"                         # leaves do not shut out the sky
     flat.set_block(32, 13, 32, "stone")
-    assert flat.light() == "dim"
-    flat.t = 250
     assert flat.light() == "dark"
     flat.set_block(34, 10, 32, "torch")
     assert flat.light() == "dim"
+    flat.set_block(32, 13, 32, "air")
+    flat.t = 250
+    assert flat.light() == "dim"                            # night, open sky, torch near
+
+
+def tunnel_world():
+    """A flat world with the agent at the west end of a covered east-west tunnel at y 5-6."""
+    w = flat_world()
+    w.cfg.creatures.zombie_spawn_prob = 0.0
+    w.cfg.creatures.zombie_dark_spawn_prob = 1.0
+    w.cfg.creatures.zombie_chase_dist = 0
+    for x in range(20, 45):
+        w.set_block(x, 5, 32, "air")
+        w.set_block(x, 6, 32, "air")
+    w.pos = [20, 5, 32]
+    return w
+
+
+def test_zombies_spawn_in_dark_tunnels_by_day():
+    w = tunnel_world()
+    w.step({"name": "wait", "steps": 1})
+    z = [c for c in w.creatures if c["kind"] == "zombie"]
+    assert len(z) == 1 and w.t < w.cfg.night_start
+    x, y, zz = z[0]["pos"]
+    assert y == 5 and zz == 32 and 25 <= x <= 44             # in the tunnel, at least 5 cells away
+    w.step({"name": "wait", "steps": 1})
+    assert len([c for c in w.creatures if c["kind"] == "zombie"]) == 2   # daylight does not reach it
+
+
+def test_torches_keep_a_tunnel_free_of_spawns():
+    w = tunnel_world()
+    for x in (26, 33, 40):
+        w.set_block(x, 7, 31, "torch")                       # lights the whole tunnel
+    w.set_block(44, 7, 31, "torch")
+    for _ in range(20):
+        w.step({"name": "wait", "steps": 1})
+    assert not any(c["kind"] == "zombie" for c in w.creatures)
+
+
+def test_zombies_in_the_open_are_gone_in_daylight():
+    w = flat_world()
+    w.cfg.creatures.zombie_spawn_prob = 0.0
+    w._spawn("zombie", (40, 10, 32))
+    w.step({"name": "wait", "steps": 1})
+    assert not any(c["kind"] == "zombie" for c in w.creatures)
 
 
 # --------------------------------------------------------------- zombies
@@ -402,14 +472,28 @@ def test_zombie_chases_at_half_speed_and_hits():
     assert w.health == 20 - 3 * len(hits)
 
 
+def test_a_hit_names_the_zombie_and_where_it_stood():
+    """A zombie beside the head (one up, on a block) hits; the result says which and from where.
+    In runs/haiku_4nights_g2 the agent sealed the cells beside its feet and died to this."""
+    w = night_world()
+    w.cfg.creatures.zombie_spawn_prob = 0.0
+    w.cfg.creatures.zombie_step_every = 1000
+    w.set_block(33, 10, 32, "stone")
+    w._spawn("zombie", (33, 11, 32))
+    zid = w.creatures[0]["id"]
+    r = w.step({"name": "wait", "steps": 8})
+    assert r.text == "Waited 1 step." + T.HIT_YOU.format(kind="Zombie", id=zid, x=33, y=11, z=32)
+    assert "hit you" in w.observe()
+
+
 def test_zombie_moves_on_two_of_every_three_steps():
     w = night_world()
     w.cfg.creatures.zombie_spawn_prob = 0.0
     assert w.cfg.creatures.zombie_step_every == 1.5
-    w._spawn("zombie", (32, 10, 14))                          # 18 away: inside the chase range of 20
+    w._spawn("zombie", (32, 10, 18))                          # 14 away: inside the chase range of 15
     for _ in range(9):
         w.step({"name": "wait", "steps": 1})
-    assert w.creatures[0]["pos"] == [32, 10, 20]              # 6 cells in 9 steps
+    assert w.creatures[0]["pos"] == [32, 10, 24]              # 6 cells in 9 steps
 
 
 def test_armor_takes_off_zombie_damage_and_wears():
@@ -597,7 +681,7 @@ def test_meat_that_does_not_fit_is_lost(flat):
     flat._spawn("sheep", (33, 10, 32))
     flat.cfg.creatures.passive_move_prob = 0.0
     texts = [flat.step({"name": "attack", "id": 1}).text for _ in range(2)]
-    assert texts[-1] == "Hit sheep #1. It is gone. Got 1 raw meat. No room for 1 raw meat."
+    assert texts[-1] == "Hit sheep #1. It is gone. Got 1 raw meat. No room for 1 raw meat. No room for 1 wool."
     assert flat.inv["raw meat"] == 32
 
 
@@ -660,4 +744,4 @@ def test_no_limit_when_slots_is_zero(flat):
     flat.cfg.inventory_slots = 0
     give(flat, dirt=500, wood_pickaxe=1, stone_sword=1, log=1, sticks=1, coal=1, berries=1, raw_meat=1, sand=1)
     assert flat.step({"name": "mine", "x": 33, "y": 9, "z": 32}).text == "Got 1 grass."
-    assert flat.observe().split("\n")[3].startswith("inventory: ")
+    assert flat.observe().split("\n")[4].startswith("inventory: ")

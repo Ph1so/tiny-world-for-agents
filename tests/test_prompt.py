@@ -90,3 +90,27 @@ def test_user_message_layout():
     assert lines[-2:] == ["observation:", "OBS"]
     none = build_user_message(None, 0, [], 3, "OBS")
     assert "memory file" not in none and "none yet" in none
+
+
+def test_recipe_book_off_by_default_and_lists_every_craft_when_on():
+    assert "can be made" not in build_system_prompt(make_world(1), 3, 2000)
+    world = make_world(1, recipe_book=True)
+    prompt = build_system_prompt(world, 3, 2000)
+    assert banned_in(prompt) == []
+    book = prompt.split(T.BOOK_HEADER, 1)[1]
+    assert len([l for l in book.splitlines() if " -> " in l]) == len(world.recipes)
+    assert "3 iron ingot -> 1 iron helmet (with a workbench within 2 cells)" in book
+    assert "1 iron ore + 1 coal or planks -> 1 iron ingot (with a furnace within 2 cells)" in book
+    assert "1 log -> 4 planks\n" in book
+
+
+def test_recipe_book_follows_alien_names_and_shuffled_recipes():
+    world = make_world(4, recipe_book=True, names="alien", shuffle_recipes=True)
+    prompt = build_system_prompt(world, 3, 2000, longterm_chars=500)
+    for name in ALL_NAMES:
+        if name != "air":
+            assert not re.search(rf"\b{name}\b", prompt.split(T.BOOK_HEADER, 1)[1]), name
+    for r in world.recipes:
+        if "fuel" not in r.items():
+            inputs = " + ".join(f"{n} {world.dn(i)}" for i, n in r.inputs)
+            assert f"{inputs} -> {r.count} {world.dn(r.output)}" in prompt
