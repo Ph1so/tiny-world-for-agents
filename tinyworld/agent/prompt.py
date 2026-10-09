@@ -72,16 +72,17 @@ REFLECTION = ("The run is over. This is the last edit of your long-term file bef
               '{"thought": "...", "longterm": [...]}')
 
 # planning "action" / "triggers" only (agent/plan.py, DECISIONS 125). Mechanics only: what a plan
-# is, what it costs, how it changes. Nothing on when to plan or what about; the one example
-# condition uses a counter, not anything in the world.
+# is, what it costs, how it changes. Nothing on when to plan or what about. The condition's form
+# is shown with placeholders, not a real condition: with "steps_since_plan >= 50" as the example,
+# Sonnet wrote exactly that 23 times in runs/sonnet_plan_every20_s153_400 (DECISIONS 128).
 PLAN_PARAGRAPH = (
     "\nYou can keep a plan: a goal and the steps toward it, at most {P} characters. It is shown to you every "
     "step and it changes only when you write it again. To write it, use the plan action. That takes time "
     "like any other action: you are then asked for the plan in a separate reply, and nothing else is done "
     "that turn.\n")
 TRIGGERS_PARAGRAPH = (
-    "With a plan you may list up to {C} conditions for when you want to write it again, such as "
-    '"steps_since_plan >= 50". A condition is a name, one of < <= > >= == !=, and a number. The names are '
+    "With a plan you may list up to {C} conditions for when you want to write it again. A condition is a "
+    'name, one of < <= > >= == !=, and a number, written like "NAME < NUMBER". The names are '
     "{names}, and any item name for how many of it you hold. On the step a condition turns true you are "
     "asked for a new plan before your next action; that takes the same time as the plan action.\n")
 # plan_every > 0 only: a plan is asked for on a fixed count of the agent's own turns. The count

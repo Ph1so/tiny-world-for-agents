@@ -52,7 +52,7 @@ def test_prompt_names_the_mechanism_only():
     a = build_system_prompt(w, 3, 500, memory_plain="append", planning="action", plan_chars=600)
     t = build_system_prompt(w, 3, 500, memory_plain="append", planning="triggers", plan_chars=600)
     assert PLAN_ACTION_LINE in a and "at most 600 characters" in a and "conditions" not in a
-    assert "health, food, air, step, steps_since_plan, deaths" in t and '"steps_since_plan >= 50"' in t
+    assert "health, food, air, step, steps_since_plan, deaths" in t and '"NAME < NUMBER"' in t and "50" not in t.split("Actions:")[0].split("You can keep a plan")[1]
     # the action list keeps its order, with the plan line last
     lines = a.split("Actions:\n")[1].split("\n\n")[0].split("\n")
     assert lines[-1] == PLAN_ACTION_LINE and lines[0].startswith("move:")

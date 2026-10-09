@@ -646,3 +646,9 @@ as-is.
     agent no longer decides when, and a run with it shows what a plan does, not whether an agent
     would make one. The prompt adds one sentence saying so, and the request says how many turns it
     has been. The step's `plan.cause` is `interval`.
+128. **The condition example is a form, not a condition.** The triggers paragraph showed
+    "steps_since_plan >= 50" as its example, picked because it names a counter and nothing in the
+    world. It still steered: in runs/sonnet_plan_every20_s153_400 Sonnet wrote that exact condition
+    23 times and most replans were that timer; Haiku wrote steps_since_plan >= 40 or 20. The
+    paragraph now gives the form with placeholders ("NAME < NUMBER") and the list of names, and no
+    real condition. (125 and 127 describe the old example.)
