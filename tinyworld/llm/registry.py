@@ -29,6 +29,7 @@ class ModelSpec(BaseModel):
     max_tokens: int = 1024                         # reply budget per call (thinking budget must fit inside)
     thinking: dict[str, Any] | None = None         # anthropic: {"type": "enabled", "budget_tokens": 2048}
     reasoning: dict[str, Any] | None = None        # openai_compatible: {"reasoning_effort": "low"}
+    reply_tool: bool = False                       # anthropic: offer a "reply" tool that takes the reply's JSON object
     sampling: dict[str, Any] = {}                  # temperature, top_p ... empty means provider defaults
     base_url: str | None = None                    # openai_compatible only
     api_key_env: str | None = None                 # name of the env var holding the key
@@ -82,7 +83,7 @@ def make_client(spec: ModelSpec, seed: int = 0) -> LLMClient:
     if spec.provider == "anthropic":
         from .anthropic_client import AnthropicClient
         return AnthropicClient(spec.model, api_key_env=spec.api_key_env or "ANTHROPIC_API_KEY",
-                               thinking=spec.thinking, sampling=spec.sampling)
+                               thinking=spec.thinking, sampling=spec.sampling, reply_tool=spec.reply_tool)
     if spec.provider == "openai_compatible":
         from .openai_client import OpenAICompatibleClient
         return OpenAICompatibleClient(spec.model, base_url=spec.base_url,

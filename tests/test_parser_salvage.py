@@ -52,3 +52,28 @@ def test_param_tag_holding_action_under_other_key():
 
 def test_empty_invoke_is_still_unreadable():
     assert not parse_reply("<invoke/>").ok
+
+
+def test_invoke_named_after_the_action():
+    raw = ('<invoke name="move">\n<parameter name="dir">west</parameter>\n<parameter name="steps">1</parameter>\n'
+           '</invoke>\n\n<invoke name="move">\n<parameter name="dir">east</parameter>\n</invoke>')
+    p = parse_reply(raw)
+    assert p.ok and p.action == {"name": "move", "dir": "west", "steps": 1}
+    p = parse_reply('<invoke name="craft"> <parameter name="items">{"log": 1}</parameter> </invoke> room')
+    assert p.ok and p.action == {"name": "craft", "items": {"log": 1}}
+    p = parse_reply('<invoke name="say"><parameter name="text">hello there</parameter></invoke>')
+    assert p.ok and p.action == {"name": "say", "text": "hello there"}
+    assert parse_reply('<invoke name="sleep">\n</invoke>').action == {"name": "sleep"}
+
+
+def test_invoke_with_nothing_in_it_or_no_action_name_stays_unreadable():
+    assert not parse_reply('<invoke name="mine">\n</invoke>\n\n<invoke name="mine">\n</invoke>').ok
+    assert not parse_reply('<invoke name="reply">\n</invoke>\n<invoke name="x">\n</invoke>').ok
+    assert not parse_reply('<invoke name="bash">\n</invoke>\n_placeholder').ok
+
+
+def test_an_action_without_a_name_does_not_hide_a_real_one():
+    raw = ('<invoke name="craft"> <parameter name="items">{"log": 1}</parameter> </invoke>\n'
+           '```json\n{"thought":"","memory":[],"action":{}}\n```')
+    p = parse_reply(raw)
+    assert p.ok and p.action == {"name": "craft", "items": {"log": 1}}

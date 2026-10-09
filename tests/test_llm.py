@@ -1,4 +1,5 @@
 """Adapters: retry, mock, model registry, cost, and the real adapters against fake SDK clients."""
+import json
 import random
 from types import SimpleNamespace
 
@@ -165,3 +166,26 @@ def test_openai_adapter_retries_on_5xx(monkeypatch):
             return super().create(**kw)
     c = OpenAICompatibleClient("m", client=Flaky())
     assert c.complete("s", "u", 10).text == "reply" and n[0] == 2
+
+
+def test_anthropic_reply_tool_is_offered_and_its_input_becomes_the_text():
+    fake = _FakeAnthropic()
+    c = AnthropicClient("model-x", client=fake, reply_tool=True)
+    assert c.complete("S", "U", 100).text.startswith('{"action"')          # the model answered in text: unchanged
+    kw = fake.kwargs[-1]
+    assert [t["name"] for t in kw["tools"]] == ["reply"] and "tool_choice" not in kw
+    assert c.settings()["reply_tool"] is True
+
+    usage = SimpleNamespace(input_tokens=10, output_tokens=5, cache_read_input_tokens=0, cache_creation_input_tokens=0)
+    fake.create = lambda **kw: SimpleNamespace(
+        content=[SimpleNamespace(type="text", text="ok, replying"),
+                 SimpleNamespace(type="tool_use", name="reply", input={"thought": "t", "action": {"name": "wait", "steps": 2}})],
+        usage=usage, stop_reason="tool_use", id="msg_2")
+    r = c.complete("S", "U", 100)
+    assert json.loads(r.text) == {"thought": "t", "action": {"name": "wait", "steps": 2}} and r.raw["via"] == "reply_tool"
+
+    off = _FakeAnthropic()
+    assert "reply_tool" not in AnthropicClient("model-x", client=off).settings()
+    AnthropicClient("model-x", client=off).complete("S", "U", 100)
+    assert "tools" not in off.kwargs[-1]
+    assert get_model("sonnet").reply_tool and not get_model("haiku").reply_tool

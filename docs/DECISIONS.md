@@ -612,3 +612,25 @@ as-is.
     in steps.jsonl under `plan` (cause, fired, accepted, goal, steps, replan_when, the plan before,
     the reply and its cost) with a `plan` event, and summary.json counts `plans_written` per agent.
     If an agent never chooses the plan action, that is a result, not a fault of the run.
+126. **Replies that follow the format: a reply tool for the models that need it, and one more
+    shape the parser reads.** In runs/sonnet_plan_s153_200 (4 Sonnet agents, 200 steps) 39 of 107
+    replies were unreadable. Asked for one bare JSON object, Sonnet often wrote function-call markup
+    with the action's name as the tag (`<invoke name="move"> <parameter name="dir">west</parameter>
+    ... </invoke>`), sometimes repeating an empty tag until the token cap (2048 output tokens, one
+    call of 61 s). Each became a 1-step wait, so a third of the turns were lost. Two changes.
+    (a) Model entry key `reply_tool: true` (anthropic): the call offers one tool, `reply`, whose
+    input is the reply's JSON object, and the adapter hands back the tool's input as the reply
+    text (the plain text when the model did not use the tool). The model that wants to make a call
+    then has a real one to make. On the 39 observations that had failed, 39 of 39 came back
+    readable through the tool, each with a thought and memory edits, and 6 of 6 planner replies
+    did too. The tool is offered, not forced: `tool_choice` of type tool is refused by
+    claude-sonnet-5-5 and by any model with thinking on. Also tried and refused by the API:
+    prefilling the reply with `{` (not supported by these models) and `output_config` with a JSON
+    schema (every object must list its keys, and an action's `items` is a map of item names). It
+    is on for sonnet, opus and sonnet_thinking and off for haiku, so Haiku runs stay comparable
+    with the earlier ones (Haiku's rate was 98 of 7235); the system prompt is the same either way.
+    (b) The parser reads `<invoke name="ACTION">` with its parameter tags as that action, when the
+    name is an action and the tag says something (19 of the 39). A tag with nothing in it stays
+    unreadable, since it carries no action. A JSON object whose "action" has no name no longer
+    hides a readable action elsewhere in the reply. `say` and `give` are now among the names the
+    salvage paths know.

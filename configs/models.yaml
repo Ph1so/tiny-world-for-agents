@@ -9,6 +9,9 @@
 # about 4% of Haiku replies were cut off before the action (a wasted call). Truncated calls already
 # spent the full budget, so the bigger cap costs little.
 # thinking (anthropic) / reasoning (openai_compatible): optional, passed through as given
+# reply_tool (anthropic): true offers a "reply" tool that takes the reply's JSON object. On for the
+#   entries whose model answered in function-call markup instead of JSON (Sonnet: 39 of 107 replies
+#   unreadable without it, runs/sonnet_plan_s153_200). Off for haiku, whose runs so far had it off.
 # sampling: temperature, top_p ... leave empty for provider defaults
 # base_url, api_key_env: openai_compatible only
 #
@@ -53,6 +56,7 @@ models:
     cache_read_per_m: 0.10
     cache_write_per_m: 2.50
     max_tokens: 2048
+    reply_tool: true
     note: verified 2026-10-07 (models overview, pricing, deprecations pages).
 
   opus:
@@ -63,6 +67,7 @@ models:
     cache_read_per_m: 0.20
     cache_write_per_m: 5.00
     max_tokens: 2048
+    reply_tool: true
     note: verified 2026-10-07 (models overview, pricing, deprecations pages).
 
   sonnet_thinking:
@@ -73,6 +78,7 @@ models:
     cache_read_per_m: 0.10
     cache_write_per_m: 2.50
     max_tokens: 4096
+    reply_tool: true
     thinking: {type: enabled, budget_tokens: 2048}
     note: same id and price as sonnet (verified 2026-10-07), with extended thinking. Thinking tokens are billed as output.
 

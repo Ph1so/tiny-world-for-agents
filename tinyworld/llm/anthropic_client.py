@@ -1,10 +1,23 @@
-"""Anthropic adapter. The system prompt is marked for prompt caching with cache_control."""
+"""Anthropic adapter. The system prompt is marked for prompt caching with cache_control.
+
+reply_tool (model entry key, off by default): the call offers one tool, "reply", whose input is
+the reply's JSON object. Models that drift into function-call markup when asked for bare JSON
+then have a real call to make, and what comes back is JSON either way: the tool's input when the
+model used it, the text when it did not. The tool is offered, not forced (forcing is refused by
+some models and by any model with thinking on). See DECISIONS 126."""
 from __future__ import annotations
 
 import os
 import time
 
+import json
+
 from .base import LLMClient, LLMError, Reply, RetryableError, with_retries
+
+REPLY_TOOL = {"name": "reply",
+              "description": "Send your reply. The input is the one JSON object the instructions ask for, "
+                             "with exactly the fields they name.",
+              "input_schema": {"type": "object"}}
 
 
 class AnthropicClient(LLMClient):
@@ -12,8 +25,10 @@ class AnthropicClient(LLMClient):
 
     def __init__(self, model_id: str, api_key_env: str = "ANTHROPIC_API_KEY", thinking: dict | None = None,
                  sampling: dict | None = None, timeout_s: float = 120.0, max_retries: int = 6,
-                 client=None):
+                 client=None, reply_tool: bool = False):
         import anthropic
+
+        self.reply_tool = bool(reply_tool)
 
         self.model_id = model_id
         self.thinking = dict(thinking) if thinking else None       # for example {"type": "enabled", "budget_tokens": 2048}
@@ -27,7 +42,8 @@ class AnthropicClient(LLMClient):
         self.client = client or anthropic.Anthropic(api_key=key, timeout=timeout_s, max_retries=0)
 
     def settings(self) -> dict:
-        return {"thinking": self.thinking, "sampling": self.sampling, "cache_control": "ephemeral on system"}
+        return {"thinking": self.thinking, "sampling": self.sampling, "cache_control": "ephemeral on system",
+                **({"reply_tool": True} if self.reply_tool else {})}
 
     def complete(self, system: str, user: str, max_tokens: int) -> Reply:
         kwargs: dict = {
@@ -39,6 +55,8 @@ class AnthropicClient(LLMClient):
         }
         if self.thinking:
             kwargs["thinking"] = self.thinking
+        if self.reply_tool:
+            kwargs["tools"] = [REPLY_TOOL]
 
         def once() -> Reply:
             t0 = time.perf_counter()
@@ -54,12 +72,15 @@ class AnthropicClient(LLMClient):
                 raise RetryableError(str(e)) from e
             latency = time.perf_counter() - t0
             text = "".join(getattr(b, "text", "") for b in msg.content if getattr(b, "type", "") == "text")
+            used = [b for b in msg.content if getattr(b, "type", "") == "tool_use" and getattr(b, "name", "") == "reply"]
+            if used and isinstance(used[0].input, dict) and used[0].input:
+                text = json.dumps(used[0].input)
             u = msg.usage
             read = int(getattr(u, "cache_read_input_tokens", 0) or 0)
             write = int(getattr(u, "cache_creation_input_tokens", 0) or 0)
             return Reply(text=text, input_tokens=int(u.input_tokens) + read + write,
                          output_tokens=int(u.output_tokens), latency_s=latency,
                          cache_read_tokens=read, cache_write_tokens=write,
-                         raw={"stop_reason": msg.stop_reason, "id": msg.id})
+                         raw={"stop_reason": msg.stop_reason, "id": msg.id, **({"via": "reply_tool"} if used else {})})
 
         return with_retries(once, max_retries=self.max_retries)

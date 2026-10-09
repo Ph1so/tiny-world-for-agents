@@ -108,8 +108,10 @@ def _objects(s: str):
         start = s.find("{", start + 1)
 
 
-ACTION_NAMES = {"move", "mine", "place", "craft", "eat", "attack", "wait", "store", "take", "drop", "jump", "sleep", "plan"}
-ACTION_ARGS = {"dir", "steps", "x", "y", "z", "item", "items", "id"}
+ACTION_NAMES = {"move", "mine", "place", "craft", "eat", "attack", "wait", "store", "take", "drop", "jump", "sleep",
+                "say", "give", "plan"}
+ACTION_ARGS = {"dir", "steps", "x", "y", "z", "item", "items", "id", "text"}
+NO_ARG_ACTIONS = {"sleep", "plan"}
 
 
 def _clean_keys(obj: dict) -> dict:
@@ -128,8 +130,8 @@ def extract_object(text: str) -> dict | None:
     for cand in _candidates(text):
         for obj in _objects(cand):
             obj = _clean_keys(obj)
-            if isinstance(obj.get("action"), dict):
-                return obj
+            if isinstance(obj.get("action"), dict) and isinstance(obj["action"].get("name"), str):
+                return obj                          # an action with no name is kept only as a last resort
             if bare_action is None and _is_bare_action(obj):
                 bare_action = obj
             if first is None:
@@ -148,6 +150,10 @@ def extract_object(text: str) -> dict | None:
 # The content is all there, only the wrapping is wrong. Pull the tagged fields out, read whatever
 # bare `"key": value` pairs are left over as one object, and assemble an action from the pieces.
 _PARAM = re.compile(r"<(?:invoke:)?parameter(?:-type)?\s*(?:name)?\s*=?\s*[\"']?([A-Za-z_]+)[\"']?\s*>(.*?)</parameter>", re.S)
+# The action's name as the tag's own name, its fields as parameters (Sonnet, 39 of 107 replies in
+# runs/sonnet_plan_s153_200):
+#   <invoke name="move"> <parameter name="dir">west</parameter> <parameter name="steps">1</parameter> </invoke>
+_INVOKE = re.compile(r"<invoke\s+name\s*=\s*[\"']?\s*([A-Za-z_]+)\s*[\"']?\s*>(.*?)(?=</invoke>|<invoke\b|\Z)", re.S)
 _TAG = re.compile(r"</?(?:invoke|parameter|parameter-type|function_calls|antml:[a-z_]+)[^>]*>", re.S)
 
 
@@ -168,6 +174,15 @@ def _salvage_tool_call_style(text: str, bare_action: dict | None = None) -> dict
 
     fields: dict = {k: params[k] for k in ("thought", "memory", "longterm") if k in params}
     action = params.get("action")
+    if not isinstance(action, dict):
+        # <invoke name="move"> with the fields inside it: the first one that names an action and
+        # says something (an action tag with nothing in it tells us nothing, so it stays unreadable)
+        for name, body in _INVOKE.findall(text):
+            name = name.strip().lower()
+            args = {k.strip(): _coerce_value(v) for k, v in _PARAM.findall(body) if k.strip() in ACTION_ARGS}
+            if name in ACTION_NAMES and (args or name in NO_ARG_ACTIONS):
+                action = {"name": name, **args}
+                break
     if not isinstance(action, dict):
         # a param whose value is itself an action object, under any key (e.g. <parameter="mine">{...})
         for v in params.values():
