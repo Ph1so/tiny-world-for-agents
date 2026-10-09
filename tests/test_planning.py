@@ -249,3 +249,62 @@ def test_plan_every_survives_a_resume(tmp_path):
     run("e", "llm", seed=1, max_steps=16, runs_dir=tmp_path, controller=mk(), resume=True)
     steps = [json.loads(l) for l in (tmp_path / "e" / "steps.jsonl").read_text().splitlines()]
     assert [s["t_start"] for s in steps if "plan" in s] == [0, 5, 10, 15]
+
+
+def both(goal="g", when=("health < 5",), action=None):
+    return json.dumps({"thought": "t", "goal": goal, "steps": ["a", "b"], "replan_when": list(when), "memory": [],
+                       "action": action or {"name": "move", "dir": "north", "steps": 1}})
+
+
+def test_inline_plan_comes_with_the_action_and_takes_no_turn():
+    w = flat_world()
+    c = controller(lambda s, u: both(goal=f"g{u.count('goal: ')}") if "write your plan again" in u else WAIT,
+                   planning="triggers", plan_every=3, plan_inline=True)
+    sysp = c.system_prompt(w)
+    assert "in the same reply as your next action; that takes no extra time" in sysp
+    assert "takes the same time as the plan action" not in sysp.split("You are also asked")[1]
+    start = list(w.pos)
+    out, res = step(c, w)
+    assert len(c.client.calls) == 1                                       # one call: plan and action together
+    ask = c.client.calls[0][1]
+    assert "It has been 3 turns since your plan was last written. In this reply, write your plan again" in ask
+    assert '{"thought": "...", "goal": "...", "steps": ["...", "..."], "replan_when": ["...", "..."], "memory": [...], "action": {...}}' in ask
+    assert out["action"]["name"] == "move" and res.valid and w.pos != start
+    p = out["plan"]
+    assert p["cause"] == "interval" and p["inline"] and p["accepted"] and p["goal"] == "g0" and p["cost_usd"] == 0.0
+    assert c.history[-1][0].startswith('{"name": "move"') and c.history[-1][1].startswith("Plan written.")
+    causes = []
+    for _ in range(4):
+        out, _ = step(c, w)
+        causes.append(out["plan"]["cause"] if "plan" in out else "-")
+    assert causes == ["-", "-", "-", "interval"] and c.plans_written == 2    # 3 ordinary turns between plans, as without inline
+
+
+def test_inline_reply_with_no_plan_still_acts():
+    w = flat_world()
+    c = controller([WAIT], planning="triggers", plan_every=5, plan_inline=True)
+    out, res = step(c, w)
+    assert out["action"]["name"] == "wait" and not out["plan"]["accepted"] and out["plan"]["error"] == "no goal"
+    assert not c.plan.is_set and "Your plan had no goal." in w.observe()
+
+
+def test_cooldown_holds_conditions_back():
+    w = flat_world()
+    def script(s, u):
+        if "Write your plan now." in u:
+            return plan_reply(when=["step >= 2"])
+        return CHOOSE if "plan: none" in u else WAIT
+    def fired_at(cooldown):
+        w = flat_world()
+        c = controller(script, planning="triggers", plan_cooldown=cooldown)
+        seen = []
+        for _ in range(9):
+            out, _ = step(c, w)
+            if "plan" in out and out["plan"]["cause"] == "condition":
+                seen.append(out["t"] if "t" in out else w.t - 1)
+        return seen, c
+    assert fired_at(0)[0] == [2]
+    seen, c = fired_at(4)
+    assert seen == [5]                                # true from step 2, looked at once 4 turns had gone by
+    assert "Conditions are not checked until 4 of your turns have gone by" in c.system_prompt(w)
+    assert c.config_extras()["plan_cooldown"] == 4 and "plan_inline" not in c.config_extras()

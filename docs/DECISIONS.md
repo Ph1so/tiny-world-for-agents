@@ -652,3 +652,23 @@ as-is.
     23 times and most replans were that timer; Haiku wrote steps_since_plan >= 40 or 20. The
     paragraph now gives the form with placeholders ("NAME < NUMBER") and the list of names, and no
     real condition. (125 and 127 describe the old example.)
+129. **A plan that does not cost the turn (plan_inline) and conditions that wait (plan_cooldown).**
+    In runs/haiku_plan_every20_s153_10d (4 Haiku agents, triggers with plan_every 20, stopped at
+    step 1937) planning made things worse than no planning over the same 1835 steps: 20 deaths
+    against 12, zombie deaths 13 against 2, 6 seeds planted against 17. Two causes, both from how
+    often conditions fired. (a) A fired condition took the whole turn, so the agent stood still.
+    All 13 zombie deaths followed a planning turn and 10 ended on two or more in a row: the agents
+    write several health conditions (health < 10, < 8, < 5) and in a fight each fires in turn. A
+    zombie hit the agent on 12% of planning turns against 3% of other turns. (b) A plan lived a
+    median of 5 ordinary decisions before it was replaced, 23 of 253 were replaced before any
+    action, and only 21 of 249 were near copies of the one before. Step 1 of a plan was mostly
+    followed; a farming step sat about 70% of the way down the list and was never reached. Two
+    opt-in agent spec keys (run flags `--plan-inline`, `--plan-cooldown`), neither knowing anything
+    about the world: `plan_inline: true` asks for the plan in the same reply as the next action
+    when a condition fires or plan_every comes up, so it takes no turn (the plan action the agent
+    chooses still takes one, and such a step's `plan` has `inline: true` and no cost of its own);
+    `plan_cooldown: K` leaves conditions unchecked until K of the agent's turns have gone by since
+    its last planning turn (a condition that turned true meanwhile fires then). Not done, on
+    purpose: "do not plan with a zombie near", which is knowledge of the game. What it costs: with
+    plan_inline planning is no longer a separate act with a price, and one call again does both
+    jobs on those turns.

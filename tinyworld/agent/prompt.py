@@ -91,6 +91,18 @@ PLAN_EVERY_SENTENCE = ("You are also asked for your plan every {N} turns, counte
                        "asked or chose to write it; that takes the same time as the plan action.\n")
 PLAN_REQUEST_EVERY = ("It has been {N} turns since your plan was last written. Write your plan now. It replaces "
                       "the one above.\nReply with one JSON object and nothing else:\n{reply}")
+# plan_inline (DECISIONS 129): a plan asked for by a condition or by the count is written in the
+# same reply as the next action, so it takes no turn. These replace the endings of the sentences above.
+ASKED_OWN_TURN = "you are asked for a new plan before your next action; that takes the same time as the plan action."
+ASKED_INLINE = "you are asked to write a new plan in the same reply as your next action; that takes no extra time."
+EVERY_OWN_TURN = "; that takes the same time as the plan action."
+EVERY_INLINE = ", in the same reply as your next action; that takes no extra time."
+# plan_cooldown > 0: conditions are not looked at for that many turns after a plan is written.
+COOLDOWN_SENTENCE = "Conditions are not checked until {K} of your turns have gone by since the plan was last written.\n"
+PLAN_INLINE_REQUEST = ("{why} In this reply, write your plan again as well as your action. It replaces the plan above.\n"
+                       "Reply with one JSON object and nothing else:\n{reply}")
+WHY_FIRED = "A condition you set is true now: {cond}."
+WHY_EVERY = "It has been {N} turns since your plan was last written."
 PLAN_ACTION_LINE = 'plan: {"name": "plan"}  write your plan again; you are asked for it in a separate reply'
 PLAN_REPLY = '{"thought": "...", "goal": "...", "steps": ["...", "..."]}'
 PLAN_REPLY_TRIGGERS = '{"thought": "...", "goal": "...", "steps": ["...", "..."], "replan_when": ["...", "..."]}'
@@ -182,13 +194,13 @@ def _actions(world) -> str:
 def build_system_prompt(world, history_window: int, memory_chars: int, longterm_chars: int = 0,
                         memory_plain: str = "rewrite", intro: str | None = None, persona: str | None = None,
                         memory_layout: str = "plain", planning: str = "off", plan_chars: int = 0,
-                        plan_every: int = 0) -> str:
+                        plan_every: int = 0, plan_inline: bool = False, plan_cooldown: int = 0) -> str:
     """intro replaces the first line (multi-agent); persona is added as a last paragraph;
     memory_layout "sections" explains the GOAL / LESSONS / NOTES file in place of the plain one;
     planning "action" or "triggers" adds the plan paragraph and the plan action line."""
     text = _system_prompt(world, history_window, memory_chars, longterm_chars, memory_plain, memory_layout)
     if planning != "off":
-        text = _with_plan(text, world, planning, plan_chars, plan_every)
+        text = _with_plan(text, world, planning, plan_chars, plan_every, plan_inline, plan_cooldown)
     if intro:
         text = intro + text[text.index("\n"):]
     if persona:
@@ -196,7 +208,8 @@ def build_system_prompt(world, history_window: int, memory_chars: int, longterm_
     return text
 
 
-def _with_plan(text: str, world, planning: str, plan_chars: int, plan_every: int = 0) -> str:
+def _with_plan(text: str, world, planning: str, plan_chars: int, plan_every: int = 0, plan_inline: bool = False,
+               plan_cooldown: int = 0) -> str:
     """The plan paragraph goes just before "Actions:", the plan line at the end of the action
     lines (before the craft list, when there is one)."""
     from .plan import COUNTERS, MAX_CONDITIONS
@@ -204,12 +217,26 @@ def _with_plan(text: str, world, planning: str, plan_chars: int, plan_every: int
     if planning == "triggers":
         names = ", ".join(list(world.vitals()) + list(COUNTERS))
         para += TRIGGERS_PARAGRAPH.format(C=MAX_CONDITIONS, names=names)
+        if plan_cooldown > 0:
+            para += COOLDOWN_SENTENCE.format(K=plan_cooldown)
     if plan_every > 0:
         para += PLAN_EVERY_SENTENCE.format(N=plan_every)
+    if plan_inline:
+        assert ASKED_OWN_TURN in para or planning != "triggers"
+        para = para.replace(ASKED_OWN_TURN, ASKED_INLINE).replace(EVERY_OWN_TURN, EVERY_INLINE)
     head, sep, tail = text.partition("\nActions:\n")
     lines = action_lines(world)
     assert sep and tail.startswith(lines), "system prompt layout changed"
     return head + para + sep + lines + "\n" + PLAN_ACTION_LINE + tail[len(lines):]
+
+
+def plan_inline_request(planning: str, fired: str | None, every: int, reply_line: str) -> str:
+    """The plan fields go in front of the step reply's own fields (reply_line, as in the system prompt)."""
+    fields = PLAN_REPLY_TRIGGERS if planning == "triggers" else PLAN_REPLY
+    fields = fields[:-1].replace('{"thought": "...", ', "{") + ", "
+    reply = '{"thought": "...", ' + fields[1:] + reply_line.replace('{"thought": "...", ', "")
+    why = WHY_FIRED.format(cond=fired) if fired else WHY_EVERY.format(N=every)
+    return PLAN_INLINE_REQUEST.format(why=why, reply=reply)
 
 
 def plan_request(planning: str, fired: str | None = None, every: int = 0) -> str:

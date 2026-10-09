@@ -66,6 +66,10 @@ Agents left to choose rarely plan, so `plan_every: N` (flag `--plan-every N`) al
 on the agent's first turn and after every N of its turns; that count knows nothing about the world
 (DECISIONS 127).
 
+`plan_inline: true` (flag `--plan-inline`) has a plan that a condition or the count asks for written in the
+same reply as the next action, so it takes no turn; `plan_cooldown: K` (flag `--plan-cooldown K`) leaves
+conditions unchecked for K turns after a plan is written (DECISIONS 129).
+
 Planning turns are in steps.jsonl under `plan`; summary.json of a multi run has `plans_written` per agent.
 
 ## Sweeps and report

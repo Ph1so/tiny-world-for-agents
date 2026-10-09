@@ -127,6 +127,8 @@ is the wait the world was given:
          "thought": "...", "raw_reply": "...", "input_tokens": 0, "output_tokens": 0, "latency_s": 0.0, "cost_usd": 0.0}
 ```
 
+With `plan_inline` the plan came in the same reply as the action: the record has `"inline": true`, the
+step's `action` is the agent's own, and the record's token and cost fields are 0 (they are the step's).
 `goal` to `set_t` are the plan in force after the turn (the old one when `accepted` is false). The
 step's own `input_tokens`, `output_tokens`, `latency_s` and `cost_usd` include the planner call.
 events.jsonl gets `{"type": "plan", "detail": {"cause", "accepted", "goal", "steps", "conditions", "fired"?}}`.

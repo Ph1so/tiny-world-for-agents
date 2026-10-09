@@ -22,7 +22,8 @@ from tinyworld.llm.registry import DEFAULT_MODELS_PATH
 from .memory import MemoryFile, SectionedMemory
 from .parser import UNREADABLE, WAIT_ONE, parse_plan, parse_reflection, parse_reply
 from .plan import PLAN_CHARS, PLAN_SET, PLAN_UNREADABLE, Plan, values as plan_values
-from .prompt import REFLECTION, build_system_prompt, build_user_message, describe_action, plan_request
+from .prompt import (REFLECTION, REPLY_LONGTERM_MEMORY, REPLY_LONGTERM_ONLY, REPLY_NO_MEMORY, REPLY_WITH_MEMORY,
+                     build_system_prompt, build_user_message, describe_action, plan_inline_request, plan_request)
 
 MEMORY_REJECTED = "Memory edit rejected. It was {n} characters over the limit."
 LONGTERM_REJECTED = "Long-term edit rejected. It was {n} characters over the limit."
@@ -48,7 +49,13 @@ class LLMController:
                  on_death: str = "respawn_keep_memory", max_tokens: int | None = None, models_file: str | None = None,
                  longterm_chars: int = 0, longterm_start: str = "", memory_plain: str = "append",
                  intro: str | None = None, persona: str | None = None, memory_layout: str = "plain",
-                 planning: str = "off", plan_chars: int = PLAN_CHARS, plan_wait: int = 1, plan_every: int = 0):
+                 planning: str = "off", plan_chars: int = PLAN_CHARS, plan_wait: int = 1, plan_every: int = 0,
+                 plan_inline: bool = False, plan_cooldown: int = 0):
+        # plan_inline: a plan asked for by a condition or by plan_every is written in the same reply
+        # as the next action and takes no turn (the plan action the agent chooses still takes one).
+        # plan_cooldown K: conditions are not checked until K turns after a planning turn.
+        self.plan_inline = bool(plan_inline)
+        self.plan_cooldown = max(0, int(plan_cooldown or 0))
         if planning not in PLANNING:
             raise ValueError(f"planning must be one of {PLANNING}, not {planning!r}")
         # plan_every N > 0: a planning turn is also forced once N of the agent's turns have gone by
@@ -131,6 +138,8 @@ class LLMController:
                 **({"planning": self.planning, "plan_chars": self.plan.limit, "plan_wait": self.plan_wait}
                    if self.planning_on else {}),
                 **({"plan_every": self.plan_every} if self.plan_every else {}),
+                **({"plan_inline": True} if self.plan_inline and self.planning_on else {}),
+                **({"plan_cooldown": self.plan_cooldown} if self.plan_cooldown and self.planning_on else {}),
                 "max_tokens": self.max_tokens, "models_file": self.models_file or str(DEFAULT_MODELS_PATH),
                 "llm_settings": self.client.settings(),
                 "prices_per_m": {"input": self.spec.input_per_m, "output": self.spec.output_per_m,
@@ -140,7 +149,8 @@ class LLMController:
         if self._system is None:
             self._system = build_system_prompt(world, self.history_window, self.memory_chars, self.longterm_chars,
                                                self.memory_plain, self.intro, self.persona, self.memory_layout,
-                                               self.planning, self.plan.limit, self.plan_every)
+                                               self.planning, self.plan.limit, self.plan_every,
+                                               self.plan_inline, self.plan_cooldown)
         return self._system
 
     def user_message(self, observation: str, t: int = 0) -> str:
@@ -157,15 +167,20 @@ class LLMController:
             self.client.world = world
         system, user = self.system_prompt(world), self.user_message(observation, world.t)
         self._plan_turn = None
-        if self.planning == "triggers" and self.plan.is_set:
+        asked: tuple[str, str | None] | None = None      # (cause, fired) when this turn must write the plan
+        if self.planning == "triggers" and self.plan.is_set and self._turns_since_plan >= self.plan_cooldown:
             hit = self.plan.fired(plan_values(world, self.plan, self.deaths))
             if hit is not None:
-                # A condition the agent set turned true: this turn is the planner call alone.
-                return self.plan_turn(world, system, user, fired=hit.text)
-        if self.plan_every and self._turns_since_plan >= self.plan_every:
-            return self.plan_turn(world, system, user, fired=None, cause="interval")
+                asked = ("condition", hit.text)       # a condition the agent set turned true
+        if asked is None and self.plan_every and self._turns_since_plan >= self.plan_every:
+            asked = ("interval", None)
+        if asked and not self.plan_inline:
+            return self.plan_turn(world, system, user, fired=asked[1], cause=asked[0])   # the planner call alone
         self._turns_since_plan += 1
-        reply = self.client.complete(system, user, self.max_tokens)
+        ask_user = user
+        if asked:
+            ask_user += "\n\n" + plan_inline_request(self.planning, asked[1], self.plan_every, self.reply_line())
+        reply = self.client.complete(system, ask_user, self.max_tokens)
         parsed = parse_reply(reply.text, self.memory_plain)
         cost = self.spec.cost_usd(reply)
         self.total_cost_usd += cost
@@ -214,6 +229,17 @@ class LLMController:
             world.set_notice(" ".join(notices))
 
         action = parsed.action if parsed.ok else dict(WAIT_ONE)
+        if asked:
+            # Plan and action came in one reply: write the plan, then carry on with the action.
+            if str(action.get("name", "")).strip().lower() == "plan":
+                action = dict(WAIT_ONE)               # the plan is in this reply already
+            out["plan"], event = self.write_plan(world, parse_plan(reply.text) if parsed.ok else None, reply.text,
+                                                 asked[0], asked[1], notices, inline=True)
+            events.append(event)
+            self._last_action = action
+            out["action"] = action
+            out["events"] = events
+            return out
         if self.planning_on and parsed.ok and str(action.get("name", "")).strip().lower() == "plan":
             # The agent chose to plan: a second call asks for the plan, and the turn is a wait.
             # Memory edits sent with the choice are applied above and shown to the planner call.
@@ -245,6 +271,25 @@ class LLMController:
         self.total_input_tokens += reply.input_tokens
         self.total_output_tokens += reply.output_tokens
         obj = parse_plan(reply.text)
+        record, event = self.write_plan(world, obj, reply.text, cause, fired, notices)
+        record.update({"input_tokens": reply.input_tokens, "output_tokens": reply.output_tokens,
+                       "latency_s": round(reply.latency_s, 4), "cost_usd": cost})
+        self._last_action = {"name": "wait", "steps": self.plan_wait}
+        return {"raw_reply": reply.text, "thought": record["thought"], "parse_ok": obj is not None,
+                "input_tokens": reply.input_tokens, "output_tokens": reply.output_tokens,
+                "latency_s": round(reply.latency_s, 4), "cost_usd": cost,
+                "memory_chars_used": self.memory.chars if self.memory_on else 0, "memory_rejected": False,
+                "plan": record, "action": dict(self._last_action), "events": [event]}
+
+    def reply_line(self) -> str:
+        mem, lt = self.memory_on, self.longterm_on
+        return (REPLY_LONGTERM_MEMORY if mem else REPLY_LONGTERM_ONLY) if lt else (REPLY_WITH_MEMORY if mem else REPLY_NO_MEMORY)
+
+    def write_plan(self, world, obj, raw: str, cause: str, fired: str | None, notices: list[str] | None = None,
+                   inline: bool = False) -> tuple[dict, dict]:
+        """Replace the plan with a reply's object (all or nothing) and set the notice. Returns the
+        step's "plan" record and its event. inline: the reply also held the turn's action."""
+        self._turns_since_plan = 0
         before = self.plan.record() if self.plan.is_set else None
         res = self.plan.write(obj, world.t, plan_values(world, self.plan, self.deaths))
         if res.accepted:
@@ -253,25 +298,19 @@ class LLMController:
         if notes:
             world.set_notice(" ".join(notes))
         thought = obj.get("thought", "") if isinstance(obj, dict) else ""
-        record = {"cause": cause, "fired": fired, "accepted": res.accepted,
+        record = {"cause": cause, "fired": fired, **({"inline": True} if inline else {}), "accepted": res.accepted,
                   "error": "unreadable" if obj is None else res.error, "over_by": res.over_by,
                   **self.plan.record(), "text": self.plan.body(self.plan.goal, self.plan.steps, self.plan.conditions)
                   if self.plan.is_set else "", "limit": self.plan.limit, "before": before,
-                  "thought": thought if isinstance(thought, str) else "", "raw_reply": reply.text,
-                  "input_tokens": reply.input_tokens, "output_tokens": reply.output_tokens,
-                  "latency_s": round(reply.latency_s, 4), "cost_usd": cost}
+                  "thought": thought if isinstance(thought, str) else "", "raw_reply": raw,
+                  "input_tokens": 0, "output_tokens": 0, "latency_s": 0.0, "cost_usd": 0.0}
         record["chars"] = len(record["text"])
-        self._plan_turn = {"accepted": res.accepted}
-        self._last_action = {"name": "wait", "steps": self.plan_wait}
+        self._plan_turn = {"accepted": res.accepted, **({"inline": True} if inline else {})}
         detail = {"cause": record["cause"], "accepted": res.accepted, "goal": self.plan.goal,
                   "steps": len(self.plan.steps), "conditions": [c.text for c in self.plan.conditions]}
         if fired:
             detail["fired"] = fired
-        return {"raw_reply": reply.text, "thought": record["thought"], "parse_ok": obj is not None,
-                "input_tokens": reply.input_tokens, "output_tokens": reply.output_tokens,
-                "latency_s": round(reply.latency_s, 4), "cost_usd": cost,
-                "memory_chars_used": self.memory.chars if self.memory_on else 0, "memory_rejected": False,
-                "plan": record, "action": dict(self._last_action), "events": [{"type": "plan", "detail": detail}]}
+        return record, {"type": "plan", "detail": detail}
 
     def history_pair(self, action: dict, result_text: str, plan: dict | None) -> tuple[str, str]:
         """The history line for a step. A planning turn reads as the plan action, not the wait
@@ -279,6 +318,8 @@ class LLMController:
         if plan is None:
             return describe_action(action), result_text
         said = PLAN_SET if plan.get("accepted") else "No plan was written."
+        if plan.get("inline"):                       # the turn was the action itself, with the plan alongside
+            return describe_action(action), f"{said} {result_text}".strip()
         return describe_action(PLAN_ACTION), f"{said} {result_text}".strip()
 
     def on_result(self, result, world) -> None:
@@ -394,7 +435,7 @@ class LLMController:
             self._turns_since_plan += 1
             return
         self._turns_since_plan = 0
-        self._plan_turn = {"accepted": bool(plan.get("accepted"))}
+        self._plan_turn = {"accepted": bool(plan.get("accepted")), **({"inline": True} if plan.get("inline") else {})}
         if plan.get("accepted"):
             self.plans_written += 1
             self.plan.restore(plan, plan_values(world, self.plan, self.deaths) if world is not None else None)
@@ -406,7 +447,8 @@ def make_llm_controller(model: str, memory_chars: int = 2000, history_window: in
                         longterm_chars: int = 0, longterm_start: str = "", memory_plain: str = "append",
                         intro: str | None = None, persona: str | None = None,
                         memory_layout: str = "plain", planning: str = "off", plan_chars: int = PLAN_CHARS,
-                        plan_wait: int = 1, plan_every: int = 0) -> LLMController:
+                        plan_wait: int = 1, plan_every: int = 0, plan_inline: bool = False,
+                        plan_cooldown: int = 0) -> LLMController:
     spec = get_model(model, models_file)
     client = client or make_client(spec, seed=seed)
     return LLMController(client, spec, memory_chars, history_window, on_death, max_tokens,
@@ -414,7 +456,7 @@ def make_llm_controller(model: str, memory_chars: int = 2000, history_window: in
                          longterm_chars=longterm_chars, longterm_start=longterm_start, memory_plain=memory_plain,
                          intro=intro, persona=persona, memory_layout=memory_layout,
                          planning=planning or "off", plan_chars=plan_chars or PLAN_CHARS, plan_wait=plan_wait or 1,
-                         plan_every=plan_every or 0)
+                         plan_every=plan_every or 0, plan_inline=bool(plan_inline), plan_cooldown=plan_cooldown or 0)
 
 
 def from_config(config: dict, client: LLMClient | None = None) -> LLMController:
@@ -427,4 +469,5 @@ def from_config(config: dict, client: LLMClient | None = None) -> LLMController:
                                memory_plain=config.get("memory_plain") or "append",
                                persona=config.get("persona"), memory_layout=config.get("memory_layout") or "plain",
                                planning=config.get("planning") or "off", plan_chars=config.get("plan_chars") or PLAN_CHARS,
-                               plan_wait=config.get("plan_wait") or 1, plan_every=config.get("plan_every") or 0)
+                               plan_wait=config.get("plan_wait") or 1, plan_every=config.get("plan_every") or 0,
+                               plan_inline=bool(config.get("plan_inline")), plan_cooldown=config.get("plan_cooldown") or 0)
