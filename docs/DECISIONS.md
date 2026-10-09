@@ -552,3 +552,33 @@ as-is.
     zombie could reach the agent from, but it listed every cell the agent could enter, doors
     included (Cy's own door showed as "feet north (9,17,27)"); it now lists only cells a creature
     can stand in (air, torch), so doors and water are no longer reported as openings.
+123. **Planting aimed at the soil, food arithmetic in the book, faster crops.** In
+    runs/4agents_varied_base_s153_r2, 10 of 46 plantings worked; 27 failed with "The cell is not
+    empty." because the agent gave the dirt block itself, not the air cell above it ("plant a seed
+    on the dirt at (62,12,57)"). The 4 starting seeds each were all lost that way, and no sprout
+    stood before step 976. And one crop (200 steps, 3 wheat, 1 bread = 6 food) did not cover the 13
+    to 26 food lost meanwhile, so no agent ever had more than one sprout. (a) With rule_notes on,
+    seeds placed into a dirt or grass block say "The cell is not empty: (x, y, z) is dirt. seeds go
+    in the empty cell above the dirt, (x, y+1, z)." (NOT_EMPTY_SOIL). (b) The book's grow line says
+    "(the cell one higher than that block)" and that sprouts grow side by side, and a food line
+    gives what eating restores and how fast food drops (rain included). (c) Defaults go from
+    grow_steps 300 and wheat_per_crop 2 to 120 and 3 (world.yaml, world_varied.yaml; world_hard.yaml
+    keeps its scarcity), so one crop is one bread (6 food against 8 lost in 120 dry steps): two
+    sprouts per agent keep it fed, in rain too (rain doubles both the food drain and the growing).
+124. **A memory file whose lessons outlast a rewrite (memory_layout: sections).** In
+    runs/4agents_varied_base_s153_r2 (4 Haiku agents, 4000 character files) about three quarters of
+    every file was state: the map, the agent's own health, food and inventory (which the observation
+    already shows), and plans. Real lessons did appear ("craft needs exact counts", "wheat/seeds NOT
+    food") but each agent rewrote its whole file about every 25 steps, from about 1500 to 600
+    characters, never near the limit, and a lesson sentence lived 4 to 5 versions. Of 21 repeated
+    "nothing is made from exactly these items" failures, 17 came while the lesson was out of the
+    file; none of 18 tries to eat seeds or wheat came while "not food" was in it. So the lessons
+    worked when kept and were not kept. Opt-in `memory_layout: sections` (agent spec key, run flag
+    `--memory-layout`, a "lessons" box in the form; default `plain` leaves the prompt word for word)
+    makes the file three parts: GOAL (one line, at most 200 characters, set with {"op": "goal"}),
+    LESSONS (added with {"op": "lesson"} or an appended "LESSON: ..." line, changed or removed only
+    by replace) and NOTES (append and rewrite work here; a rewrite that sends the whole file back
+    keeps every lesson and adds new ones). The prompt names the parts, says health, food, inventory
+    and surroundings are shown every step so the file does not need them, and asks for a lesson when
+    something fails or surprises. Unlike most prompt text this is advice, not a fact about the world;
+    it is off by default so runs with it can be compared against runs without.

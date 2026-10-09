@@ -394,6 +394,8 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--model", default=None, help="entry name in configs/models.yaml (controller llm)")
     ap.add_argument("--models-file", default=None, help="default configs/models.yaml")
     ap.add_argument("--memory-chars", type=int, default=None, help="memory file limit, 0 turns it off")
+    ap.add_argument("--memory-layout", choices=["plain", "sections"], default=None,
+                    help="sections: the memory file has GOAL, LESSONS (a rewrite keeps them) and NOTES")
     ap.add_argument("--history-window", type=int, default=None, help="past action/result pairs shown, K")
     ap.add_argument("--max-tokens", type=int, default=None, help="reply budget per call, default from the model entry")
     ap.add_argument("--seed", type=int, default=None)
@@ -420,7 +422,7 @@ def main(argv: list[str] | None = None) -> None:
     opts = {"controller": "sensible_bot", "model": None, "models_file": None, "memory_chars": 2000,
             "history_window": 3, "max_tokens": None, "seed": 1, "max_steps": 1500, "run_id": None,
             "runs_dir": "runs", "names": None, "shuffle_recipes": None, "recipe_book": None, "on_death": None,
-            "lineage": None, "longterm_chars": 0, "lineages_dir": None}
+            "lineage": None, "longterm_chars": 0, "lineages_dir": None, "memory_layout": "plain"}
     file_opts: dict = {}
     if args.run_config:
         file_opts = yaml.safe_load(Path(args.run_config).read_text()) or {}
@@ -438,6 +440,8 @@ def main(argv: list[str] | None = None) -> None:
                  "history_window": opts["history_window"], "max_tokens": opts["max_tokens"]}
         if args.persona:
             extra["persona"] = args.persona
+        if opts["memory_layout"] != "plain":
+            extra["memory_layout"] = opts["memory_layout"]
         if opts["longterm_chars"]:
             if not opts["lineage"]:
                 ap.error("--longterm-chars needs --lineage NAME")

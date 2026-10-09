@@ -39,6 +39,18 @@ def test_seeds_need_soil_and_water():
     assert r.text.startswith("The seeds was not placed. It needs")
 
 
+def test_seeds_aimed_at_the_soil_say_which_cell_is_empty():
+    w = calm()
+    w._add("seeds", 1)
+    r = w.step({"name": "place", "item": "seeds", "x": 33, "y": 9, "z": 32})
+    assert r.text == "The cell is not empty: (33, 9, 32) is grass. seeds go in the empty cell above the grass, (33, 10, 32)."
+    assert not r.valid and w.inv["seeds"] == 1
+    w.set_block(33, 10, 32, "stone")                       # not soil: the plain line
+    assert w.step({"name": "place", "item": "seeds", "x": 33, "y": 10, "z": 32}).text == T.NOT_EMPTY
+    w.cfg.rule_notes = False
+    assert w.step({"name": "place", "item": "seeds", "x": 31, "y": 9, "z": 32}).text == T.NOT_EMPTY
+
+
 def test_seeds_cannot_be_jumped_on():
     w = calm()
     w._add("seeds", 1)
@@ -61,7 +73,7 @@ def test_sprout_grows_into_wheat_and_rain_counts_double():
     assert w.block(31, 10, 32) == "sprout" and w.crops[(31, 10, 32)] == 10
     w.cfg.farming.seed_bonus_chance = 1.0
     r = w.step({"name": "mine", "x": 33, "y": 10, "z": 32})
-    assert r.text == "Got 2 wheat. Got 2 seeds."
+    assert r.text == "Got 3 wheat. Got 2 seeds."
     r = w.step({"name": "mine", "x": 31, "y": 10, "z": 32})  # an unripe sprout gives its seeds back
     assert r.text == "Got 1 seeds." and w.crops == {}
 
@@ -208,7 +220,7 @@ def test_new_maps_have_wild_wheat_by_water_and_nothing_else_changes():
     w.pos = list(wheat[0]); w.pos[0] += 1                # stand beside it (cell may be odd; mine checks reach only)
     w.cfg.farming.seed_bonus_chance = 0.0
     r = w.step({"name": "mine", "x": wheat[0][0], "y": wheat[0][1], "z": wheat[0][2]})
-    assert r.text.startswith("Got 2 wheat. Got 1 seeds.")
+    assert r.text.startswith("Got 3 wheat. Got 1 seeds.")
 
 
 def test_corner_hill_keeps_all_ore_near_it():

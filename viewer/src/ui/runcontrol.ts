@@ -97,6 +97,7 @@ class AgentRow {
   kind: HTMLSelectElement;
   model: HTMLSelectElement;
   memory: HTMLInputElement;
+  lessons: HTMLInputElement;
   persona: HTMLTextAreaElement;
   private personaBox: HTMLElement;
 
@@ -111,24 +112,28 @@ class AgentRow {
     }
     if (opts.models.some((m) => m.name === "haiku")) this.model.value = "haiku";
     this.memory = el("input", { type: "number", min: "0", max: "20000", step: "100", value: "4000", title: "memory file size in characters; 0 turns it off" }) as HTMLInputElement;
+    this.lessons = el("input", { type: "checkbox" }) as HTMLInputElement;
     this.persona = el("textarea", { rows: "2", maxlength: "1500",
       placeholder: "optional: a paragraph added to the end of this agent's instructions, e.g. a personality or a role" }) as HTMLTextAreaElement;
     this.personaBox = el("div", { class: "persona" }, this.persona);
     const personaBtn = button("persona", () => { this.personaBox.classList.toggle("open"); this.persona.focus(); }, "small");
     const remove = button("✕", () => onRemove(this), "small");
     remove.title = "remove this agent";
-    const modelBits = el("span", { class: "llm-only" }, this.model, el("span", { class: "muted", text: "memory" }), this.memory, personaBtn);
+    const modelBits = el("span", { class: "llm-only" }, this.model, el("span", { class: "muted", text: "memory" }), this.memory,
+      el("label", { class: "muted", title: "memory file in parts: GOAL, LESSONS (kept through rewrites) and NOTES" }, this.lessons, " lessons"),
+      personaBtn);
     this.root.append(el("div", { class: "agent-line" }, this.name, this.kind, modelBits, remove), this.personaBox);
     const sync = () => { modelBits.style.display = this.kind.value === "llm" ? "" : "none"; if (this.kind.value !== "llm") this.personaBox.classList.remove("open"); onChange(); };
     this.kind.addEventListener("change", sync);
-    for (const x of [this.model, this.memory, this.name]) x.addEventListener("input", onChange);
+    for (const x of [this.model, this.memory, this.name, this.lessons]) x.addEventListener("input", onChange);
     sync();
   }
 
   spec(): AgentSpec {
     const llm = this.kind.value === "llm";
     return { name: this.name.value.trim(), controller: this.kind.value,
-      ...(llm ? { model: this.model.value, memory_chars: Number(this.memory.value), persona: this.persona.value.trim() || undefined } : {}) };
+      ...(llm ? { model: this.model.value, memory_chars: Number(this.memory.value),
+        ...(this.lessons.checked ? { memory_layout: "sections" } : {}), persona: this.persona.value.trim() || undefined } : {}) };
   }
 }
 

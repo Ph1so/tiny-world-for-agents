@@ -19,7 +19,7 @@ from pathlib import Path
 from tinyworld.llm import LLMClient, ModelSpec, get_model, make_client
 from tinyworld.llm.registry import DEFAULT_MODELS_PATH
 
-from .memory import MemoryFile
+from .memory import MemoryFile, SectionedMemory
 from .parser import UNREADABLE, WAIT_ONE, parse_reflection, parse_reply
 from .prompt import REFLECTION, build_system_prompt, build_user_message, describe_action
 
@@ -44,11 +44,14 @@ class LLMController:
     def __init__(self, client: LLMClient, spec: ModelSpec, memory_chars: int = 2000, history_window: int = 3,
                  on_death: str = "respawn_keep_memory", max_tokens: int | None = None, models_file: str | None = None,
                  longterm_chars: int = 0, longterm_start: str = "", memory_plain: str = "append",
-                 intro: str | None = None, persona: str | None = None):
+                 intro: str | None = None, persona: str | None = None, memory_layout: str = "plain"):
         self.intro, self.persona = intro, persona      # multi-agent: first line and character, if any
         if memory_plain not in ("append", "rewrite"):
             raise ValueError(f"memory_plain must be append or rewrite, not {memory_plain!r}")
+        if memory_layout not in ("plain", "sections"):
+            raise ValueError(f"memory_layout must be plain or sections, not {memory_layout!r}")
         self.memory_plain = memory_plain
+        self.memory_layout = memory_layout
         self.client = client
         self.spec = spec
         self.memory_chars = int(memory_chars)
@@ -56,7 +59,8 @@ class LLMController:
         self.on_death = on_death
         self.max_tokens = int(max_tokens or spec.max_tokens)
         self.models_file = models_file
-        self.memory = MemoryFile(self.memory_chars)
+        # sections: GOAL / LESSONS / NOTES, lessons out of a rewrite's reach (agent/memory.py)
+        self.memory = SectionedMemory(self.memory_chars) if memory_layout == "sections" else MemoryFile(self.memory_chars)
         self.longterm_chars = int(longterm_chars or 0)
         self.longterm = MemoryFile(self.longterm_chars, longterm_start or "")
         self.rejected_longterm = 0
@@ -98,6 +102,7 @@ class LLMController:
         return {"model": self.spec.name, "model_id": self.spec.model, "provider": self.spec.provider,
                 "memory_chars": self.memory_chars, "history_window": self.history_window,
                 "memory_plain": self.memory_plain,
+                **({"memory_layout": self.memory_layout} if self.memory_layout != "plain" else {}),
                 **({"longterm_chars": self.longterm_chars} if self.longterm_on else {}),
                 "max_tokens": self.max_tokens, "models_file": self.models_file or str(DEFAULT_MODELS_PATH),
                 "llm_settings": self.client.settings(),
@@ -107,7 +112,7 @@ class LLMController:
     def system_prompt(self, world) -> str:
         if self._system is None:
             self._system = build_system_prompt(world, self.history_window, self.memory_chars, self.longterm_chars,
-                                               self.memory_plain, self.intro, self.persona)
+                                               self.memory_plain, self.intro, self.persona, self.memory_layout)
         return self._system
 
     def user_message(self, observation: str) -> str:
@@ -284,13 +289,14 @@ def make_llm_controller(model: str, memory_chars: int = 2000, history_window: in
                         on_death: str = "respawn_keep_memory", seed: int = 0, models_file: str | Path | None = None,
                         max_tokens: int | None = None, client: LLMClient | None = None,
                         longterm_chars: int = 0, longterm_start: str = "", memory_plain: str = "append",
-                        intro: str | None = None, persona: str | None = None) -> LLMController:
+                        intro: str | None = None, persona: str | None = None,
+                        memory_layout: str = "plain") -> LLMController:
     spec = get_model(model, models_file)
     client = client or make_client(spec, seed=seed)
     return LLMController(client, spec, memory_chars, history_window, on_death, max_tokens,
                          models_file=str(models_file) if models_file else None,
                          longterm_chars=longterm_chars, longterm_start=longterm_start, memory_plain=memory_plain,
-                         intro=intro, persona=persona)
+                         intro=intro, persona=persona, memory_layout=memory_layout)
 
 
 def from_config(config: dict, client: LLMClient | None = None) -> LLMController:
@@ -301,4 +307,4 @@ def from_config(config: dict, client: LLMClient | None = None) -> LLMController:
                                longterm_chars=config.get("longterm_chars", 0) or 0,
                                longterm_start=config.get("longterm_start", "") or "",
                                memory_plain=config.get("memory_plain") or "append",
-                               persona=config.get("persona"))
+                               persona=config.get("persona"), memory_layout=config.get("memory_layout") or "plain")

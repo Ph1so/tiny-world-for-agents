@@ -104,7 +104,7 @@ def _make_controller(spec: dict, seed: int, aid: int, world_cfg: WorldConfig, cl
     return make_llm_controller(
         spec["model"], spec.get("memory_chars", 2000), spec.get("history_window", 3), world_cfg.on_death,
         seed + aid, spec.get("models_file"), spec.get("max_tokens"),
-        memory_plain=spec.get("memory_plain", "append"),
+        memory_plain=spec.get("memory_plain", "append"), memory_layout=spec.get("memory_layout", "plain"),
         intro=INTRO_REALTIME if clock == "realtime" else INTRO_LOCKSTEP, persona=spec.get("persona"))
 
 
@@ -126,7 +126,8 @@ def run_multi(run_id: str, agents: list[dict] | None = None, seed: int = 1, max_
     if resume:
         old_cfg = yaml.safe_load((run_dir / "config.yaml").read_text())
         agents = [{k: v for k, v in a.items() if k in ("name", "controller", "model", "memory_chars", "history_window",
-                                                         "max_tokens", "persona", "memory_plain", "models_file")}
+                                                         "max_tokens", "persona", "memory_plain", "memory_layout",
+                                                         "models_file")}
                   for a in old_cfg["agents"]]
         seed, clock, tick_ms = old_cfg["seed"], old_cfg.get("clock", "realtime"), old_cfg.get("tick_ms", 1000)
         world_cfg = WorldConfig.model_validate(old_cfg["world"])

@@ -76,8 +76,8 @@ class Farming(_M):
     zombies_trample: bool = False      # a chasing zombie that steps onto a sprout or wheat crushes it (or breaks one blocking it)
     animal_eat_prob: float = 0.0       # chance per step that a sheep or chicken beside a crop eats it
     water_dist: int = 4                # seeds need water within this many cells sideways, level with the soil or up to 2 below; 0 = no need
-    grow_steps: int = 300              # world steps for a sprout to turn into wheat; steps in rain count double
-    wheat_per_crop: int = 2
+    grow_steps: int = 120              # world steps for a sprout to turn into wheat; steps in rain count double
+    wheat_per_crop: int = 3
     seeds_per_crop: int = 1            # seeds back from ripe wheat, plus 1 more with seed_bonus_chance
     seed_bonus_chance: float = 0.5
 

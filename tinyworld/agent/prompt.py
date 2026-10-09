@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import json
 
+from .memory import GOAL_CHARS
+
 SYSTEM_TEMPLATE = """You are in a world. The world moves forward each time you act.
 
 Each step you are shown {memory_clause}your last {K} actions with their results, and what you can observe right now. You do not remember anything else from earlier steps.
@@ -44,6 +46,24 @@ EDIT_OPS = ('\nAn edit is a list of ops: {{"op": "append", "text": "..."}} adds 
 # memory_plain "append" only: appended memory lines get the world step in front.
 STAMP_NOTE = ' A line added to the memory file starts with the step it was added at, like "[step 12] ".'
 LONGTERM_MEMORY_NOTE = " Your memory file starts empty in every run."
+# memory_layout "sections" only (agent/memory.py SectionedMemory): the file's three parts, how to
+# edit each, and a push to keep lessons. Agents in runs/4agents_varied_base_s153_r2 learned a rule
+# after a failure, lost it in a rewrite, and failed the same way again (DECISIONS.md).
+SECTIONS_PARAGRAPH = (
+    "\nYour memory file has three parts. GOAL is one line for what you are working toward. LESSONS are what "
+    "you have found out about how this world works: what works, what fails and why, what to do or avoid. "
+    "NOTES are everything else, such as places and plans. Your health, food, inventory and surroundings "
+    "are shown to you every step, so the file does not need them.\n"
+    'An edit is a list of ops: {"op": "goal", "text": "..."} sets the goal line (at most <G> characters), '
+    '{"op": "lesson", "text": "..."} adds a lesson, {"op": "append", "text": "..."} adds a note, '
+    '{"op": "replace", "old": "...", "new": "..."} changes the first match (a lesson changed to "" is removed), '
+    '{"op": "rewrite", "text": "..."} replaces all the notes. A rewrite never removes the goal or a lesson. '
+    "<PLAIN><STAMP>\n"
+    "When something fails, or works in a way you did not expect, add a lesson, so you do not make the same "
+    "mistake again. Keep your lessons; they are what you carry forward.\n")
+SECTIONS_PLAIN = {"append": 'Plain text in "memory" is added as a note.',
+                  "rewrite": 'Plain text in "memory" replaces the notes.'}
+STAMP_NOTE_SECTIONS = ' A note added this way starts with the step it was added at, like "[step 12] ".'
 REPLY_LONGTERM_MEMORY = '{"thought": "...", "memory": [...], "longterm": [...], "action": {...}}'
 REPLY_LONGTERM_ONLY = '{"thought": "...", "longterm": [...], "action": {...}}'
 LONGTERM_LINE = "long-term file ({used} of {limit} characters used)"
@@ -113,6 +133,9 @@ def book_lines(world) -> str:
               T.BOOK_USE_TORCH.format(torch=world.dn("torch"), r=cc.torch_radius, l=c.torch_light)]
     if c.weather.enabled:
         lines.append(T.BOOK_USE_ROOF.format(leaves=world.dn("leaves"), torch=world.dn("torch")))
+    food = ", ".join(f"{world.dn(k)} {v}" for k, v in c.food.items())
+    rain = T.BOOK_USE_FOOD_RAIN.format(m=c.weather.rain_food_mult) if c.weather.enabled else ""
+    lines.append(T.BOOK_USE_FOOD.format(values=food, d=c.vitals.food_drain_every, rain=rain))
     f = c.farming
     lines += ["", T.BOOK_GROW_HEADER, T.BOOK_GROW.format(
         seeds=world.dn("seeds"), soil=" or ".join(world.dn(s) for s in ("dirt", "grass")), water=world.dn("water"),
@@ -129,9 +152,11 @@ def _actions(world) -> str:
 
 
 def build_system_prompt(world, history_window: int, memory_chars: int, longterm_chars: int = 0,
-                        memory_plain: str = "rewrite", intro: str | None = None, persona: str | None = None) -> str:
-    """intro replaces the first line (multi-agent); persona is added as a last paragraph."""
-    text = _system_prompt(world, history_window, memory_chars, longterm_chars, memory_plain)
+                        memory_plain: str = "rewrite", intro: str | None = None, persona: str | None = None,
+                        memory_layout: str = "plain") -> str:
+    """intro replaces the first line (multi-agent); persona is added as a last paragraph;
+    memory_layout "sections" explains the GOAL / LESSONS / NOTES file in place of the plain one."""
+    text = _system_prompt(world, history_window, memory_chars, longterm_chars, memory_plain, memory_layout)
     if intro:
         text = intro + text[text.index("\n"):]
     if persona:
@@ -140,13 +165,18 @@ def build_system_prompt(world, history_window: int, memory_chars: int, longterm_
 
 
 def _system_prompt(world, history_window: int, memory_chars: int, longterm_chars: int = 0,
-                   memory_plain: str = "rewrite") -> str:
+                   memory_plain: str = "rewrite", memory_layout: str = "plain") -> str:
     """memory_plain "rewrite" with no long-term file is the PLAN.md section 7 prompt word for word.
-    "append" (plain memory text adds lines) spells the edit ops out, as the long-term file does."""
+    "append" (plain memory text adds lines) spells the edit ops out, as the long-term file does.
+    memory_layout "sections" spells out the sectioned file's ops instead (SECTIONS_PARAGRAPH)."""
     mem = memory_chars > 0
-    appends = mem and memory_plain == "append"
+    sections = mem and memory_layout == "sections"
+    appends = mem and memory_plain == "append" and not sections
     fields = " and ".join(f for f, on in (('"memory"', appends), ('"longterm"', longterm_chars > 0)) if on)
     ops = EDIT_OPS.format(fields=fields, stamp=STAMP_NOTE if appends else "") if fields else ""
+    if sections:
+        ops = SECTIONS_PARAGRAPH.replace("<G>", str(GOAL_CHARS)).replace("<PLAIN>", SECTIONS_PLAIN[memory_plain]).replace(
+            "<STAMP>", STAMP_NOTE_SECTIONS if memory_plain == "append" else "") + ops
     if longterm_chars > 0:
         clause = ("your memory file, " if mem else "") + "your long-term file, "
         paragraph = (MEMORY_PARAGRAPH.format(N=memory_chars) if mem else "") + LONGTERM_PARAGRAPH.format(

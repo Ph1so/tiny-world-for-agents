@@ -3,7 +3,7 @@
 Wording rule: say what happened. Never say why, and never say what to do. Exceptions, each
 because a model could not tell why from what it saw (see DECISIONS.md): NOT_MOVED_DRY states the
 rule for moving up and down, and with rule_notes on, NOT_MADE_EXACT, NOT_MADE_STATION,
-OBS_NO_HEAL, NOT_PLANTED and OBS_WET_RULE say why a craft or planting failed, or why health is
+OBS_NO_HEAL, NOT_PLANTED, NOT_EMPTY_SOIL and OBS_WET_RULE say why a craft or planting failed, or why health is
 not rising or food is falling fast, and DIED_CHEST_NOTE says what a death does not take.
 """
 
@@ -50,6 +50,8 @@ TOOK = "Took {items}."
 DROPPED = "Dropped {items}."
 JUMPED = "Moved up 1 cell. Placed {item} at ({x}, {y}, {z})."
 NOT_PLANTED = "The {item} was not placed. It needs {soil} under it and {water} within {r} cells."
+NOT_EMPTY_SOIL = ("The cell is not empty: ({x}, {y}, {z}) is {block}. {item} go in the empty cell above "
+                  "the {block}, ({x}, {y1}, {z}).")
 HAIL_HIT = " Hail hit you."
 NO_BED = "No {bed} within {r} cells."
 NOT_SLEPT_SKY = "You did not sleep. The sky is bright."
@@ -117,10 +119,13 @@ BOOK_USE_TORCH = "{torch}: no zombies appear within {r} cells of a placed {torch
 BOOK_USE_ROOF = ("rain and hail fall on you when no block above your head shuts out the sky ({leaves} do not); "
                  "under a roof it is dark without a {torch} near.")
 BOOK_GROW_HEADER = "What grows:"
-BOOK_GROW = ("{seeds} placed with place in an empty cell on {soil}, with {water} within {r} cells sideways (level "
+BOOK_USE_FOOD = "food: eating 1 restores {values}; food drops by 1 every {d} steps{rain}."
+BOOK_USE_FOOD_RAIN = " ({m} times as fast while rain falls on you)"
+BOOK_GROW = ("{seeds} placed with place in an empty cell on {soil} (the cell one higher than that block), with {water} within {r} cells sideways (level "
              "with that block or up to 2 below), become a {sprout}. A {sprout} turns into {wheat} after {n} steps "
              "(rain on it counts double). A {wheat} block is ripe: mining it gives {w} {wheat} and {s} or more "
-             "{seeds}. Mining a {sprout} gives its {seeds} back. Mining {grass} sometimes gives {seeds}.")
+             "{seeds}. Mining a {sprout} gives its {seeds} back. Mining {grass} sometimes gives {seeds}. Each {sprout} "
+             "grows on its own, so several can grow at once.")
 OBS_USES = "{name} ({n} uses left)"
 OBS_USES_MANY = "{name} x{c} ({n} uses left)"
 OBS_COUNT = "{name} x{c}"

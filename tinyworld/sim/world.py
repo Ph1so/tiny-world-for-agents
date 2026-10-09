@@ -1256,6 +1256,10 @@ class World:
         if self._agent_in(*p):
             return T.IN_YOUR_CELL, False, desc
         if self.bid(*p) not in (AIR, WATER) or self._occupied(*p):
+            under = self.block(*p)
+            if item in defs.PLANTS and self.cfg.rule_notes and under in defs.SOIL:   # aimed at the soil itself
+                return T.NOT_EMPTY_SOIL.format(x=p[0], y=p[1], z=p[2], y1=p[1] + 1, block=self.dn(under),
+                                               item=self.dn(item)), False, desc
             return T.NOT_EMPTY, False, desc
         if item in defs.PLANTS:
             return (yield from self._plant(item, p, desc))

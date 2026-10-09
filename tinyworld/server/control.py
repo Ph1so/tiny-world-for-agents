@@ -255,6 +255,8 @@ class RunControl:
                 if len(persona) > 1500:
                     raise ControlError(f"agent {n + 1}: persona is at most 1500 characters")
                 entry.update({"model": a["model"], "memory_chars": mem, "history_window": 3})
+                if a.get("memory_layout") == "sections":
+                    entry["memory_layout"] = "sections"
                 if persona:
                     entry["persona"] = persona
             clean.append(entry)
@@ -310,6 +312,8 @@ class RunControl:
             args = ["--controller", lead["controller"], *common]
             if lead["controller"] == "llm":
                 args += ["--model", lead["model"], "--memory-chars", str(lead["memory_chars"])]
+                if lead.get("memory_layout") == "sections":
+                    args += ["--memory-layout", "sections"]
                 if lead.get("persona"):
                     args += ["--persona", lead["persona"]]
                 if lineage:

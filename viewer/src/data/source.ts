@@ -50,7 +50,7 @@ export interface Options {
   settings?: SettingDef[]; world_defaults?: Record<string, Record<string, unknown>>;
 }
 
-export interface AgentSpec { name: string; controller: string; model?: string; memory_chars?: number; persona?: string }
+export interface AgentSpec { name: string; controller: string; model?: string; memory_chars?: number; memory_layout?: "sections"; persona?: string }
 
 export interface RunSpec {
   agents?: AgentSpec[];

@@ -89,8 +89,8 @@ farming:
   zombies_trample: false    # a chasing zombie that steps onto a sprout or wheat crushes it
   animal_eat_prob: 0.0      # chance per step that a sheep or chicken beside a crop eats it
   water_dist: 4             # seeds need water within this many cells sideways, level with the soil or up to 2 below; 0 = no need
-  grow_steps: 300           # steps for a sprout to turn into wheat; steps in rain count double
-  wheat_per_crop: 2
+  grow_steps: 120           # steps for a sprout to turn into wheat; steps in rain count double
+  wheat_per_crop: 3         # one crop is one bread
   seeds_per_crop: 1         # plus 1 more with seed_bonus_chance
   seed_bonus_chance: 0.5
 
