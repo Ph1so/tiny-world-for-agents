@@ -49,6 +49,21 @@ The viewer shows the long-term file above the memory panel, and the new run form
 lineage. A lineage only runs one generation at a time; an unfinished one holds it until it is
 resumed to the end. Off by default, so other runs and their prompts are unchanged.
 
+## Planning (a plan the agent writes when it chooses to)
+
+Off by default. With `planning: action` an agent has a plan slot (a goal and steps, shown every
+step) and a `plan` action that costs a turn and asks for the plan in a separate reply. With
+`planning: triggers` the plan can also carry conditions the agent sets itself
+(`"replan_when": ["steps_since_plan >= 50"]`), and it is asked for a new plan when one turns true.
+The harness never decides when to plan or what about (DECISIONS 125).
+
+```
+uv run python -m tinyworld.runner.run --controller llm --model haiku --memory-chars 2000 --planning triggers --max-steps 300 --run-id haiku_plan
+# multi: add `planning: action` or `planning: triggers` to an agent line in the spec
+```
+
+Planning turns are in steps.jsonl under `plan`; summary.json of a multi run has `plans_written` per agent.
+
 ## Sweeps and report
 
 ```

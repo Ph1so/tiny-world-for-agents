@@ -105,7 +105,8 @@ def _make_controller(spec: dict, seed: int, aid: int, world_cfg: WorldConfig, cl
         spec["model"], spec.get("memory_chars", 2000), spec.get("history_window", 3), world_cfg.on_death,
         seed + aid, spec.get("models_file"), spec.get("max_tokens"),
         memory_plain=spec.get("memory_plain", "append"), memory_layout=spec.get("memory_layout", "plain"),
-        intro=INTRO_REALTIME if clock == "realtime" else INTRO_LOCKSTEP, persona=spec.get("persona"))
+        intro=INTRO_REALTIME if clock == "realtime" else INTRO_LOCKSTEP, persona=spec.get("persona"),
+        planning=spec.get("planning", "off"), plan_chars=spec.get("plan_chars"), plan_wait=spec.get("plan_wait"))
 
 
 def run_multi(run_id: str, agents: list[dict] | None = None, seed: int = 1, max_steps: int = 1200,
@@ -127,7 +128,7 @@ def run_multi(run_id: str, agents: list[dict] | None = None, seed: int = 1, max_
         old_cfg = yaml.safe_load((run_dir / "config.yaml").read_text())
         agents = [{k: v for k, v in a.items() if k in ("name", "controller", "model", "memory_chars", "history_window",
                                                          "max_tokens", "persona", "memory_plain", "memory_layout",
-                                                         "models_file")}
+                                                         "models_file", "planning", "plan_chars", "plan_wait")}
                   for a in old_cfg["agents"]]
         seed, clock, tick_ms = old_cfg["seed"], old_cfg.get("clock", "realtime"), old_cfg.get("tick_ms", 1000)
         world_cfg = WorldConfig.model_validate(old_cfg["world"])
@@ -271,6 +272,8 @@ def run_multi(run_id: str, agents: list[dict] | None = None, seed: int = 1, max_
                     for key in ("memory_chars_used", "memory_rejected", "input_tokens", "output_tokens",
                                 "latency_s", "cost_usd"):
                         rec[key] = out.get(key, STEP_DEFAULTS[key])
+                    if out.get("plan") is not None:
+                        rec["plan"] = out["plan"]
                     for e in out.get("events", []):
                         write("events", {"t": t_obs, "i": tick_i, "type": e["type"],
                                          "detail": {**e.get("detail", {}), "agent": r.agent}})
@@ -349,7 +352,8 @@ def _replay(run_dir: Path, world: World, eng: Engine, ctl: dict, i_of: dict, pen
         i_of[aid] = len(mine)
         if not hasattr(c, "history"):
             continue
-        c.history = [(describe_action(s["action"]), s["result"]) for s in mine]
+        pair = getattr(c, "history_pair", lambda a, r, p: (describe_action(a), r))
+        c.history = [pair(s["action"], s["result"], s.get("plan")) for s in mine]
         c.i = len(mine) + (aid in flight)
         c.deaths = sum(1 for s in mine if s.get("died"))
         c.parse_fails = sum(1 for s in mine if not s.get("parse_ok", True))
@@ -368,6 +372,12 @@ def _replay(run_dir: Path, world: World, eng: Engine, ctl: dict, i_of: dict, pen
             c._last_action = mine[-1]["action"]
         if c.memory_on:
             c.memory.set(text, c.i)
+        if getattr(c, "planning_on", False):
+            world.me = world.body(aid)
+            for s in mine + ([flight[aid]["out"]] if aid in flight else []):
+                c.replay_plan(s, world)
+            if aid not in flight:
+                c._plan_turn = None                 # only an action still under way waits for its result
     for aid, v in flight.items():
         pending[aid] = (v["obs"], v["t_obs"], v["out"], v["secs"])
 
@@ -377,7 +387,8 @@ def _write_summary(run_dir: Path, world: World, ctl: dict, i_of: dict, wall_s: f
     for aid, c in ctl.items():
         b = world.body(aid)
         agents.append({"id": aid, "name": b.name, "alive": b.alive, "agent_steps": i_of[aid], "deaths": b.deaths,
-                       "items_crafted": list(b.firsts["craft"]), "cost_usd": round(getattr(c, "total_cost_usd", 0.0), 6)})
+                       "items_crafted": list(b.firsts["craft"]), "cost_usd": round(getattr(c, "total_cost_usd", 0.0), 6),
+                       **({"plans_written": c.plans_written} if getattr(c, "planning_on", False) else {})})
     summary = {"mode": "multi", "world_steps": world.t, "wall_clock_s": round(wall_s, 1), "agents": agents,
                "cost_usd_total": round(sum(a["cost_usd"] for a in agents), 6)}
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2))

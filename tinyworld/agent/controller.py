@@ -20,8 +20,9 @@ from tinyworld.llm import LLMClient, ModelSpec, get_model, make_client
 from tinyworld.llm.registry import DEFAULT_MODELS_PATH
 
 from .memory import MemoryFile, SectionedMemory
-from .parser import UNREADABLE, WAIT_ONE, parse_reflection, parse_reply
-from .prompt import REFLECTION, build_system_prompt, build_user_message, describe_action
+from .parser import UNREADABLE, WAIT_ONE, parse_plan, parse_reflection, parse_reply
+from .plan import PLAN_CHARS, PLAN_SET, PLAN_UNREADABLE, Plan, values as plan_values
+from .prompt import REFLECTION, build_system_prompt, build_user_message, describe_action, plan_request
 
 MEMORY_REJECTED = "Memory edit rejected. It was {n} characters over the limit."
 LONGTERM_REJECTED = "Long-term edit rejected. It was {n} characters over the limit."
@@ -36,6 +37,8 @@ MEMORY_ROOM = FILE_ROOM.replace("{file}", "memory")
 STAMP = "[step {t}] "
 _STAMP_RE = re.compile(r"^\[step \d+\] ")
 WIPE_OP = {"op": "wipe", "reason": "death"}
+PLAN_ACTION = {"name": "plan"}
+PLANNING = ("off", "action", "triggers")
 
 
 class LLMController:
@@ -44,7 +47,18 @@ class LLMController:
     def __init__(self, client: LLMClient, spec: ModelSpec, memory_chars: int = 2000, history_window: int = 3,
                  on_death: str = "respawn_keep_memory", max_tokens: int | None = None, models_file: str | None = None,
                  longterm_chars: int = 0, longterm_start: str = "", memory_plain: str = "append",
-                 intro: str | None = None, persona: str | None = None, memory_layout: str = "plain"):
+                 intro: str | None = None, persona: str | None = None, memory_layout: str = "plain",
+                 planning: str = "off", plan_chars: int = PLAN_CHARS, plan_wait: int = 1):
+        if planning not in PLANNING:
+            raise ValueError(f"planning must be one of {PLANNING}, not {planning!r}")
+        # planning (agent/plan.py): "action" adds a plan slot and a plan action; "triggers" also
+        # lets the agent set conditions for when it is asked to plan again. plan_wait is how many
+        # world steps a planning turn takes (in real time the planner call's own latency adds).
+        self.planning = planning
+        self.plan = Plan(int(plan_chars or PLAN_CHARS), triggers=planning == "triggers")
+        self.plan_wait = max(1, int(plan_wait or 1))
+        self.plans_written = 0
+        self._plan_turn: dict | None = None         # set while the action under way is a planning turn
         self.intro, self.persona = intro, persona      # multi-agent: first line and character, if any
         if memory_plain not in ("append", "rewrite"):
             raise ValueError(f"memory_plain must be append or rewrite, not {memory_plain!r}")
@@ -90,6 +104,10 @@ class LLMController:
     def longterm_on(self) -> bool:
         return self.longterm_chars > 0
 
+    @property
+    def planning_on(self) -> bool:
+        return self.planning != "off"
+
     def longterm_start_record(self) -> dict | None:
         """longterm.jsonl line 0: the file as the run starts. None when the long-term file is off."""
         if not self.longterm_on:
@@ -104,6 +122,8 @@ class LLMController:
                 "memory_plain": self.memory_plain,
                 **({"memory_layout": self.memory_layout} if self.memory_layout != "plain" else {}),
                 **({"longterm_chars": self.longterm_chars} if self.longterm_on else {}),
+                **({"planning": self.planning, "plan_chars": self.plan.limit, "plan_wait": self.plan_wait}
+                   if self.planning_on else {}),
                 "max_tokens": self.max_tokens, "models_file": self.models_file or str(DEFAULT_MODELS_PATH),
                 "llm_settings": self.client.settings(),
                 "prices_per_m": {"input": self.spec.input_per_m, "output": self.spec.output_per_m,
@@ -112,14 +132,15 @@ class LLMController:
     def system_prompt(self, world) -> str:
         if self._system is None:
             self._system = build_system_prompt(world, self.history_window, self.memory_chars, self.longterm_chars,
-                                               self.memory_plain, self.intro, self.persona, self.memory_layout)
+                                               self.memory_plain, self.intro, self.persona, self.memory_layout,
+                                               self.planning, self.plan.limit)
         return self._system
 
-    def user_message(self, observation: str) -> str:
+    def user_message(self, observation: str, t: int = 0) -> str:
         mem = self.memory.text if self.memory_on else None
         lt = self.longterm.text if self.longterm_on else None
         return build_user_message(mem, self.memory_chars, self.history, self.history_window, observation,
-                                  lt, self.longterm_chars)
+                                  lt, self.longterm_chars, self.plan.render(t) if self.planning_on else None)
 
     # ------------------------------------------------------------ interface
 
@@ -127,7 +148,13 @@ class LLMController:
         self.i += 1
         if getattr(self.client, "needs_world", False):
             self.client.world = world
-        system, user = self.system_prompt(world), self.user_message(observation)
+        system, user = self.system_prompt(world), self.user_message(observation, world.t)
+        self._plan_turn = None
+        if self.planning == "triggers" and self.plan.is_set:
+            hit = self.plan.fired(plan_values(world, self.plan, self.deaths))
+            if hit is not None:
+                # A condition the agent set turned true: this turn is the planner call alone.
+                return self.plan_turn(world, system, user, fired=hit.text)
         reply = self.client.complete(system, user, self.max_tokens)
         parsed = parse_reply(reply.text, self.memory_plain)
         cost = self.spec.cost_usd(reply)
@@ -177,19 +204,79 @@ class LLMController:
             world.set_notice(" ".join(notices))
 
         action = parsed.action if parsed.ok else dict(WAIT_ONE)
+        if self.planning_on and parsed.ok and str(action.get("name", "")).strip().lower() == "plan":
+            # The agent chose to plan: a second call asks for the plan, and the turn is a wait.
+            # Memory edits sent with the choice are applied above and shown to the planner call.
+            user = self.user_message(observation, world.t)
+            plan_out = self.plan_turn(world, system, user, fired=None, notices=notices)
+            for k in ("input_tokens", "output_tokens", "cost_usd"):
+                out[k] += plan_out[k]
+            out["latency_s"] = round(out["latency_s"] + plan_out["latency_s"], 4)
+            out["plan"], out["action"] = plan_out["plan"], plan_out["action"]
+            out["events"] = events + plan_out["events"]
+            return out
         self._last_action = action
         out["action"] = action
         if events:
             out["events"] = events
         return out
 
+    def plan_turn(self, world, system: str, user: str, fired: str | None, notices: list[str] | None = None) -> dict:
+        """One planner call. The reply replaces the plan, all or nothing (agent/plan.py). Returns
+        a step output whose action is a wait of plan_wait steps and whose "plan" is the record
+        that goes into steps.jsonl."""
+        reply = self.client.complete(system, user + "\n\n" + plan_request(self.planning, fired), self.max_tokens)
+        cost = self.spec.cost_usd(reply)
+        self.total_cost_usd += cost
+        self.total_input_tokens += reply.input_tokens
+        self.total_output_tokens += reply.output_tokens
+        obj = parse_plan(reply.text)
+        before = self.plan.record() if self.plan.is_set else None
+        res = self.plan.write(obj, world.t, plan_values(world, self.plan, self.deaths))
+        if res.accepted:
+            self.plans_written += 1
+        notes = list(notices or []) + ([PLAN_UNREADABLE] if obj is None else res.notices)
+        if notes:
+            world.set_notice(" ".join(notes))
+        thought = obj.get("thought", "") if isinstance(obj, dict) else ""
+        record = {"cause": "condition" if fired else "action", "fired": fired, "accepted": res.accepted,
+                  "error": "unreadable" if obj is None else res.error, "over_by": res.over_by,
+                  **self.plan.record(), "text": self.plan.body(self.plan.goal, self.plan.steps, self.plan.conditions)
+                  if self.plan.is_set else "", "limit": self.plan.limit, "before": before,
+                  "thought": thought if isinstance(thought, str) else "", "raw_reply": reply.text,
+                  "input_tokens": reply.input_tokens, "output_tokens": reply.output_tokens,
+                  "latency_s": round(reply.latency_s, 4), "cost_usd": cost}
+        record["chars"] = len(record["text"])
+        self._plan_turn = {"accepted": res.accepted}
+        self._last_action = {"name": "wait", "steps": self.plan_wait}
+        detail = {"cause": record["cause"], "accepted": res.accepted, "goal": self.plan.goal,
+                  "steps": len(self.plan.steps), "conditions": [c.text for c in self.plan.conditions]}
+        if fired:
+            detail["fired"] = fired
+        return {"raw_reply": reply.text, "thought": record["thought"], "parse_ok": obj is not None,
+                "input_tokens": reply.input_tokens, "output_tokens": reply.output_tokens,
+                "latency_s": round(reply.latency_s, 4), "cost_usd": cost,
+                "memory_chars_used": self.memory.chars if self.memory_on else 0, "memory_rejected": False,
+                "plan": record, "action": dict(self._last_action), "events": [{"type": "plan", "detail": detail}]}
+
+    def history_pair(self, action: dict, result_text: str, plan: dict | None) -> tuple[str, str]:
+        """The history line for a step. A planning turn reads as the plan action, not the wait
+        the world was given."""
+        if plan is None:
+            return describe_action(action), result_text
+        said = PLAN_SET if plan.get("accepted") else "No plan was written."
+        return describe_action(PLAN_ACTION), f"{said} {result_text}".strip()
+
     def on_result(self, result, world) -> None:
-        self.history.append((describe_action(self._last_action), result.text))
+        self.history.append(self.history_pair(self._last_action, result.text, self._plan_turn))
+        self._plan_turn = None
         if result.died:
             self.deaths += 1
             if self.on_death == "respawn_wipe_memory" and self.memory_on and self.memory.chars > 0:
                 self.memory.wipe(self.i)
                 self._wiped = True
+            if self.on_death == "respawn_wipe_memory" and self.planning_on:
+                self.plan.wipe()
 
     def finish(self, world) -> dict | None:
         """The run is over: one last call so the agent can edit its long-term file. Returns the
@@ -198,7 +285,7 @@ class LLMController:
             return None
         if getattr(self.client, "needs_world", False):
             self.client.world = world
-        user = self.user_message(world.observe()) + "\n\n" + REFLECTION
+        user = self.user_message(world.observe(), world.t) + "\n\n" + REFLECTION
         reply = self.client.complete(self.system_prompt(world), user, self.max_tokens)
         parsed = parse_reflection(reply.text)
         cost = self.spec.cost_usd(reply)
@@ -283,6 +370,18 @@ class LLMController:
         self.total_input_tokens += int(step_record.get("input_tokens", 0) or 0)
         self.total_output_tokens += int(step_record.get("output_tokens", 0) or 0)
         self._last_action = step_record.get("action", dict(WAIT_ONE))
+        self.replay_plan(step_record, world)
+
+    def replay_plan(self, step_record: dict, world=None) -> None:
+        """Resume: a logged planning turn puts its plan back (and marks the turn for the history)."""
+        plan = step_record.get("plan")
+        self._plan_turn = None
+        if not (self.planning_on and isinstance(plan, dict)):
+            return
+        self._plan_turn = {"accepted": bool(plan.get("accepted"))}
+        if plan.get("accepted"):
+            self.plans_written += 1
+            self.plan.restore(plan, plan_values(world, self.plan, self.deaths) if world is not None else None)
 
 
 def make_llm_controller(model: str, memory_chars: int = 2000, history_window: int = 3,
@@ -290,13 +389,15 @@ def make_llm_controller(model: str, memory_chars: int = 2000, history_window: in
                         max_tokens: int | None = None, client: LLMClient | None = None,
                         longterm_chars: int = 0, longterm_start: str = "", memory_plain: str = "append",
                         intro: str | None = None, persona: str | None = None,
-                        memory_layout: str = "plain") -> LLMController:
+                        memory_layout: str = "plain", planning: str = "off", plan_chars: int = PLAN_CHARS,
+                        plan_wait: int = 1) -> LLMController:
     spec = get_model(model, models_file)
     client = client or make_client(spec, seed=seed)
     return LLMController(client, spec, memory_chars, history_window, on_death, max_tokens,
                          models_file=str(models_file) if models_file else None,
                          longterm_chars=longterm_chars, longterm_start=longterm_start, memory_plain=memory_plain,
-                         intro=intro, persona=persona, memory_layout=memory_layout)
+                         intro=intro, persona=persona, memory_layout=memory_layout,
+                         planning=planning or "off", plan_chars=plan_chars or PLAN_CHARS, plan_wait=plan_wait or 1)
 
 
 def from_config(config: dict, client: LLMClient | None = None) -> LLMController:
@@ -307,4 +408,6 @@ def from_config(config: dict, client: LLMClient | None = None) -> LLMController:
                                longterm_chars=config.get("longterm_chars", 0) or 0,
                                longterm_start=config.get("longterm_start", "") or "",
                                memory_plain=config.get("memory_plain") or "append",
-                               persona=config.get("persona"), memory_layout=config.get("memory_layout") or "plain")
+                               persona=config.get("persona"), memory_layout=config.get("memory_layout") or "plain",
+                               planning=config.get("planning") or "off", plan_chars=config.get("plan_chars") or PLAN_CHARS,
+                               plan_wait=config.get("plan_wait") or 1)

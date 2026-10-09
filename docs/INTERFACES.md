@@ -116,6 +116,21 @@ Each line also has `died`, the cause string if the agent died during this step, 
 
 A step is complete when its steps.jsonl line is on disk. That line is written last. Resume drops anything in the other files with a higher `i`.
 
+A planning turn (controller option `planning`, DECISIONS 125) has one more key, and its `action`
+is the wait the world was given:
+
+```
+"plan": {"cause": "action" | "condition", "fired": "food < 8" | null, "accepted": true,
+         "error": null | "over limit" | "no goal" | "unreadable", "over_by": 0,
+         "goal": "...", "steps": ["..."], "replan_when": ["steps_since_plan >= 50"], "set_t": 412,
+         "text": "the plan as shown", "chars": 87, "limit": 1000, "before": {the plan it replaced} | null,
+         "thought": "...", "raw_reply": "...", "input_tokens": 0, "output_tokens": 0, "latency_s": 0.0, "cost_usd": 0.0}
+```
+
+`goal` to `set_t` are the plan in force after the turn (the old one when `accepted` is false). The
+step's own `input_tokens`, `output_tokens`, `latency_s` and `cost_usd` include the planner call.
+events.jsonl gets `{"type": "plan", "detail": {"cause", "accepted", "goal", "steps", "conditions", "fired"?}}`.
+
 ### memory.jsonl
 One line per agent step where the agent sent at least one memory op, plus one line at `i` 0 with the empty file.
 

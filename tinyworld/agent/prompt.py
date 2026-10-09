@@ -71,6 +71,27 @@ REFLECTION = ("The run is over. This is the last edit of your long-term file bef
               "Reply with one JSON object and nothing else:\n"
               '{"thought": "...", "longterm": [...]}')
 
+# planning "action" / "triggers" only (agent/plan.py, DECISIONS 125). Mechanics only: what a plan
+# is, what it costs, how it changes. Nothing on when to plan or what about; the one example
+# condition uses a counter, not anything in the world.
+PLAN_PARAGRAPH = (
+    "\nYou can keep a plan: a goal and the steps toward it, at most {P} characters. It is shown to you every "
+    "step and it changes only when you write it again. To write it, use the plan action. That takes time "
+    "like any other action: you are then asked for the plan in a separate reply, and nothing else is done "
+    "that turn.\n")
+TRIGGERS_PARAGRAPH = (
+    "With a plan you may list up to {C} conditions for when you want to write it again, such as "
+    '"steps_since_plan >= 50". A condition is a name, one of < <= > >= == !=, and a number. The names are '
+    "{names}, and any item name for how many of it you hold. On the step a condition turns true you are "
+    "asked for a new plan before your next action; that takes the same time as the plan action.\n")
+PLAN_ACTION_LINE = 'plan: {"name": "plan"}  write your plan again; you are asked for it in a separate reply'
+PLAN_REPLY = '{"thought": "...", "goal": "...", "steps": ["...", "..."]}'
+PLAN_REPLY_TRIGGERS = '{"thought": "...", "goal": "...", "steps": ["...", "..."], "replan_when": ["...", "..."]}'
+PLAN_REQUEST = ("You chose the plan action. Write your plan now. It replaces the one above.\n"
+                "Reply with one JSON object and nothing else:\n{reply}")
+PLAN_REQUEST_FIRED = ("A condition you set is true now: {cond}. Write your plan now. It replaces the one above.\n"
+                      "Reply with one JSON object and nothing else:\n{reply}")
+
 MEMORY_LINE = "memory file ({used} of {limit} characters used)"
 HISTORY_HEADER = "last {k} actions:"
 HISTORY_NONE = "none yet"
@@ -153,15 +174,37 @@ def _actions(world) -> str:
 
 def build_system_prompt(world, history_window: int, memory_chars: int, longterm_chars: int = 0,
                         memory_plain: str = "rewrite", intro: str | None = None, persona: str | None = None,
-                        memory_layout: str = "plain") -> str:
+                        memory_layout: str = "plain", planning: str = "off", plan_chars: int = 0) -> str:
     """intro replaces the first line (multi-agent); persona is added as a last paragraph;
-    memory_layout "sections" explains the GOAL / LESSONS / NOTES file in place of the plain one."""
+    memory_layout "sections" explains the GOAL / LESSONS / NOTES file in place of the plain one;
+    planning "action" or "triggers" adds the plan paragraph and the plan action line."""
     text = _system_prompt(world, history_window, memory_chars, longterm_chars, memory_plain, memory_layout)
+    if planning != "off":
+        text = _with_plan(text, world, planning, plan_chars)
     if intro:
         text = intro + text[text.index("\n"):]
     if persona:
         text += "\n\n" + persona
     return text
+
+
+def _with_plan(text: str, world, planning: str, plan_chars: int) -> str:
+    """The plan paragraph goes just before "Actions:", the plan line at the end of the action
+    lines (before the craft list, when there is one)."""
+    from .plan import COUNTERS, MAX_CONDITIONS
+    para = PLAN_PARAGRAPH.format(P=plan_chars)
+    if planning == "triggers":
+        names = ", ".join(list(world.vitals()) + list(COUNTERS))
+        para += TRIGGERS_PARAGRAPH.format(C=MAX_CONDITIONS, names=names)
+    head, sep, tail = text.partition("\nActions:\n")
+    lines = action_lines(world)
+    assert sep and tail.startswith(lines), "system prompt layout changed"
+    return head + para + sep + lines + "\n" + PLAN_ACTION_LINE + tail[len(lines):]
+
+
+def plan_request(planning: str, fired: str | None = None) -> str:
+    reply = PLAN_REPLY_TRIGGERS if planning == "triggers" else PLAN_REPLY
+    return PLAN_REQUEST_FIRED.format(cond=fired, reply=reply) if fired else PLAN_REQUEST.format(reply=reply)
 
 
 def _system_prompt(world, history_window: int, memory_chars: int, longterm_chars: int = 0,
@@ -195,9 +238,10 @@ def _system_prompt(world, history_window: int, memory_chars: int, longterm_chars
 
 def build_user_message(memory_text: str | None, memory_limit: int, history: list[tuple[str, str]],
                        history_window: int, observation: str, longterm_text: str | None = None,
-                       longterm_limit: int = 0) -> str:
+                       longterm_limit: int = 0, plan_text: str | None = None) -> str:
     """memory_text None means memory is off (size 0) and the memory block is left out. The
-    long-term block comes first when longterm_text is not None."""
+    long-term block comes first when longterm_text is not None. plan_text (planning on) is the
+    plan block, shown after the memory file."""
     parts: list[str] = []
     if longterm_text is not None:
         parts.append(LONGTERM_LINE.format(used=len(longterm_text), limit=longterm_limit))
@@ -206,6 +250,9 @@ def build_user_message(memory_text: str | None, memory_limit: int, history: list
     if memory_text is not None:
         parts.append(MEMORY_LINE.format(used=len(memory_text), limit=memory_limit))
         parts.append(memory_text)
+        parts.append("")
+    if plan_text is not None:
+        parts.append(plan_text)
         parts.append("")
     parts.append(HISTORY_HEADER.format(k=history_window))
     shown = history[-history_window:] if history_window > 0 else []

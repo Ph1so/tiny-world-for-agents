@@ -55,7 +55,7 @@ class SensibleMockClient(MockClient):
     needs_world = True
 
     def __init__(self, seed: int = 0, note_every: int = 5, overflow_every: int = 29, garble_every: int = 37,
-                 rewrite_every: int = 60):
+                 rewrite_every: int = 60, plan_every: int = 0):
         super().__init__()
         from tinyworld.bots.sensible_bot import SensibleBot
         self.bot = SensibleBot(seed)
@@ -63,6 +63,7 @@ class SensibleMockClient(MockClient):
         self.n = 0
         self.note_every, self.overflow_every = note_every, overflow_every
         self.garble_every, self.rewrite_every = garble_every, rewrite_every
+        self.plan_every = plan_every                # with planning on: choose the plan action every so often
 
     def replay(self, observation: str, world, step_record: dict) -> None:
         """Bring the bot's private state forward on resume, like a bot controller does."""
@@ -75,7 +76,15 @@ class SensibleMockClient(MockClient):
         self.n += 1
         if self.world is None:
             raise RuntimeError("SensibleMockClient needs world set before complete()")
-        if "The run is over." in user:                        # end of run reflection
+        if "Write your plan now." in user:                    # a planning turn (agent/plan.py)
+            self.n -= 1
+            reply = {"thought": "mock plan", "goal": f"keep going from step {self.world.t}", "steps": ["look", "act"]}
+            if '"replan_when"' in user:
+                reply["replan_when"] = [f"steps_since_plan >= {self.plan_every or 40}"]
+            text = json.dumps(reply)
+        elif self.plan_every and re.search(r"^plan(: none| \()", user.split("observation:")[0], re.M) and self.n % self.plan_every == 0:
+            text = json.dumps({"thought": "mock: time to plan", "memory": [], "action": {"name": "plan"}})
+        elif "The run is over." in user:                      # end of run reflection
             text = json.dumps({"thought": "mock reflection", "longterm": self._longterm_ops(user, final=True)})
         elif self.garble_every and self.n % self.garble_every == 0:
             text = "I will look around first. {not json"

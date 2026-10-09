@@ -108,7 +108,7 @@ def _objects(s: str):
         start = s.find("{", start + 1)
 
 
-ACTION_NAMES = {"move", "mine", "place", "craft", "eat", "attack", "wait", "store", "take", "drop", "jump", "sleep"}
+ACTION_NAMES = {"move", "mine", "place", "craft", "eat", "attack", "wait", "store", "take", "drop", "jump", "sleep", "plan"}
 ACTION_ARGS = {"dir", "steps", "x", "y", "z", "item", "items", "id"}
 
 
@@ -250,3 +250,18 @@ def parse_reflection(text: str) -> Parsed:
     if not isinstance(thought, str):
         thought = json.dumps(thought)
     return Parsed(True, thought=thought, longterm_ops=normalize_longterm(obj.get("longterm", [])))
+
+
+def parse_plan(text: str) -> dict | None:
+    """The planner reply: the first JSON object with a "goal", else the first object, else None."""
+    if not isinstance(text, str) or not text.strip():
+        return None
+    first = None
+    for cand in _candidates(text):
+        for o in _objects(cand):
+            o = _clean_keys(o)
+            if "goal" in o:
+                return o
+            if first is None:
+                first = o
+    return first

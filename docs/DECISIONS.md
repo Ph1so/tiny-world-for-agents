@@ -582,3 +582,33 @@ as-is.
     and surroundings are shown every step so the file does not need them, and asks for a lesson when
     something fails or surprises. Unlike most prompt text this is advice, not a fact about the world;
     it is off by default so runs with it can be compared against runs without.
+125. **A plan the agent writes when it chooses to (planning: action | triggers).** In
+    runs/4agents_varied_base_s153_32d (4 Haiku agents, 32 days) the agents wrote what they needed
+    ("plant seeds by water", "eat early") and did not hold to it: the subject of an agent's
+    thought changed about every 2 decisions, and 49 of 50 hunger deaths came after the "eat early"
+    lesson was in the file. One call per step does the planning, the bookkeeping and the acting,
+    and nothing keeps a goal in place between calls. The fix must not do the agent's strategy for
+    it, so the rule is: the harness gives the means to plan and never says when or what about. A
+    test for any piece of it: would this code still make sense in a different game? "Plan again
+    when food is under 8" or "at dawn" fails that; a slot that holds a goal until the agent
+    changes it passes. Two opt-in levels (agent spec key `planning`, run flag `--planning`; default
+    `off` leaves prompts and replies word for word):
+    - `action`: a plan slot (goal and steps, at most `plan_chars` 1000 characters) shown every step
+      after the memory file, and a `plan` action. Choosing it costs the turn: the world gets a wait
+      of `plan_wait` steps (default 1; in real time the second call's latency adds itself) and the
+      agent is asked for the plan in a separate reply. The plan changes in no other way, so a memory
+      rewrite cannot lose it. A plan over the limit, with no goal, or unreadable leaves the old one.
+    - `triggers`: the same, and the plan may carry up to 5 conditions under "replan_when", each a
+      name, a comparison and a number. The names are the numbers the observation shows (taken from
+      world.vitals()), the counters step, steps_since_plan and deaths, and any item name (how many
+      held). On the step a condition turns from false to true the agent's turn is the planner call
+      alone, told which condition fired. A condition that is true when written waits until it has
+      been false once, or a plan could set itself off for ever. No condition is built in, and the
+      prompt's one example ("steps_since_plan >= 50") names a counter, not anything in the world.
+    What is still ours: that a plan exists, its goal-and-steps shape, the 1000 characters (600 was tried first and cut off a real Haiku plan by 25), and the
+    list of names (listing food next to step says both can be watched; it does not say which
+    matters). Not built on purpose, kept for later rungs to compare against: a forced plan every N
+    decisions, and plans forced on events we pick (death, dawn, low health). Each planning turn is
+    in steps.jsonl under `plan` (cause, fired, accepted, goal, steps, replan_when, the plan before,
+    the reply and its cost) with a `plan` event, and summary.json counts `plans_written` per agent.
+    If an agent never chooses the plan action, that is a result, not a fault of the run.

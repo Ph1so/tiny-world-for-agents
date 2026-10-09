@@ -257,6 +257,8 @@ class RunControl:
                 entry.update({"model": a["model"], "memory_chars": mem, "history_window": 3})
                 if a.get("memory_layout") == "sections":
                     entry["memory_layout"] = "sections"
+                if a.get("planning") in ("action", "triggers"):
+                    entry["planning"] = a["planning"]
                 if persona:
                     entry["persona"] = persona
             clean.append(entry)
@@ -314,6 +316,8 @@ class RunControl:
                 args += ["--model", lead["model"], "--memory-chars", str(lead["memory_chars"])]
                 if lead.get("memory_layout") == "sections":
                     args += ["--memory-layout", "sections"]
+                if lead.get("planning"):
+                    args += ["--planning", lead["planning"]]
                 if lead.get("persona"):
                     args += ["--persona", lead["persona"]]
                 if lineage:

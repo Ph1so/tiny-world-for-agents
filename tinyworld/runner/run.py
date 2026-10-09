@@ -82,7 +82,8 @@ STEP_DEFAULTS: dict[str, Any] = {
 #             written to memory.jsonl for this step (leave out when no memory op was sent)
 #   "events": [{"type": "parse_fail", "detail": {...}}, ...]  written to events.jsonl with t and i added
 #   "longterm": same shape as "memory", for the long-term file, written to longterm.jsonl
-EXTRA_KEYS = ["memory", "events", "longterm"]
+#   "plan": a planning turn's record (agent/plan.py), kept in the step's own steps.jsonl line
+EXTRA_KEYS = ["memory", "events", "longterm", "plan"]
 
 
 def git_commit() -> str | None:
@@ -254,6 +255,8 @@ def run_loop(world: World, controller, logger: RunLogger, max_steps: int,
                   "vitals": world.vitals()}
         for key in ("memory_chars_used", "memory_rejected", "input_tokens", "output_tokens", "latency_s", "cost_usd"):
             record[key] = extras.get(key, STEP_DEFAULTS[key])
+        if extras.get("plan") is not None:
+            record["plan"] = extras["plan"]
         events = [{"t": t_start, **e} for e in extras.get("events", [])] + result.events
         logger.log_step(record, result.deltas, events, extras.get("memory"), extras.get("longterm"))
         if on_step:
@@ -396,6 +399,8 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--memory-chars", type=int, default=None, help="memory file limit, 0 turns it off")
     ap.add_argument("--memory-layout", choices=["plain", "sections"], default=None,
                     help="sections: the memory file has GOAL, LESSONS (a rewrite keeps them) and NOTES")
+    ap.add_argument("--planning", choices=["off", "action", "triggers"], default=None,
+                    help="action: a plan slot and a plan action; triggers: also conditions the agent sets for planning again")
     ap.add_argument("--history-window", type=int, default=None, help="past action/result pairs shown, K")
     ap.add_argument("--max-tokens", type=int, default=None, help="reply budget per call, default from the model entry")
     ap.add_argument("--seed", type=int, default=None)
@@ -422,7 +427,8 @@ def main(argv: list[str] | None = None) -> None:
     opts = {"controller": "sensible_bot", "model": None, "models_file": None, "memory_chars": 2000,
             "history_window": 3, "max_tokens": None, "seed": 1, "max_steps": 1500, "run_id": None,
             "runs_dir": "runs", "names": None, "shuffle_recipes": None, "recipe_book": None, "on_death": None,
-            "lineage": None, "longterm_chars": 0, "lineages_dir": None, "memory_layout": "plain"}
+            "lineage": None, "longterm_chars": 0, "lineages_dir": None, "memory_layout": "plain",
+            "planning": "off"}
     file_opts: dict = {}
     if args.run_config:
         file_opts = yaml.safe_load(Path(args.run_config).read_text()) or {}
@@ -442,6 +448,8 @@ def main(argv: list[str] | None = None) -> None:
             extra["persona"] = args.persona
         if opts["memory_layout"] != "plain":
             extra["memory_layout"] = opts["memory_layout"]
+        if opts["planning"] != "off":
+            extra["planning"] = opts["planning"]
         if opts["longterm_chars"]:
             if not opts["lineage"]:
                 ap.error("--longterm-chars needs --lineage NAME")
