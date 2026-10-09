@@ -140,6 +140,14 @@ def action_lines(world) -> str:
         f'jump: {{"name": "jump", "item": {ex_place}}}  move up 1 cell and place an item from the inventory in the cell you left',
         f'sleep: {{"name": "sleep"}}  with a {world.dn("bed")} within {c.reach} cells: the world moves on until dawn or until you are hurt',
     ]
+    if c.long_actions:
+        lines += [
+            f'goto: {{"name": "goto", "x": X, "y": Y, "z": Z}} or {{"name": "goto", "id": ID}}  walk until you are beside '
+            f'that cell or creature, at most {c.goto_max_steps} steps; it stops early when you are hurt, when something '
+            f'new comes into view, or when there is no way on foot',
+            'any action may also carry "repeat": 2 to 8, to do it that many times in a row; it stops early when a '
+            'try fails or you are hurt',
+        ]
     if getattr(world, "multi", False):
         lines[5] = f'attack: {{"name": "attack", "id": ID}}  a creature or agent within {c.attack_reach} cells'
         lines += [

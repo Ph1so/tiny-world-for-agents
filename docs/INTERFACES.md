@@ -54,6 +54,16 @@ Notes on the API.
 north is -z, south is +z, east is +x, west is -x, up is +y.
 Item and block names use spaces in text ("berry bush"). Parsing accepts spaces or underscores.
 
+With world key `long_actions: true` (DECISIONS 130) there is also
+
+```
+{"name": "goto", "x": 31, "y": 14, "z": 23}      walk until beside that cell
+{"name": "goto", "id": 12}                       walk until beside that creature or agent
+```
+
+and any action may carry `"repeat": 2..8` (the same action that many times, stopping at a failed try
+or when hurt).
+
 ## Run folder `runs/<run_id>/`
 
 Two clocks. `t` is the world step. `i` is the agent step (one model call or one bot decision). One agent step can use several world steps.

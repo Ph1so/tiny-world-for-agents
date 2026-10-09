@@ -109,8 +109,8 @@ def _objects(s: str):
 
 
 ACTION_NAMES = {"move", "mine", "place", "craft", "eat", "attack", "wait", "store", "take", "drop", "jump", "sleep",
-                "say", "give", "plan"}
-ACTION_ARGS = {"dir", "steps", "x", "y", "z", "item", "items", "id", "text"}
+                "say", "give", "plan", "goto"}
+ACTION_ARGS = {"dir", "steps", "x", "y", "z", "item", "items", "id", "text", "repeat"}
 NO_ARG_ACTIONS = {"sleep", "plan"}
 
 

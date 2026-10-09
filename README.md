@@ -72,6 +72,12 @@ conditions unchecked for K turns after a plan is written (DECISIONS 129).
 
 Planning turns are in steps.jsonl under `plan`; summary.json of a multi run has `plans_written` per agent.
 
+## Longer actions (goto and repeat)
+
+Off by default. With `long_actions: true` in the world yaml an agent can also `goto` a cell or a
+creature (it finds the path and walks until it is beside it) and add `"repeat": N` to any action.
+Neither picks a target for the agent (DECISIONS 130).
+
 ## Sweeps and report
 
 ```

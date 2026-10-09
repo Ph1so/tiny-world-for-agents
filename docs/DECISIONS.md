@@ -672,3 +672,24 @@ as-is.
     purpose: "do not plan with a zombie near", which is knowledge of the game. What it costs: with
     plan_inline planning is no longer a separate act with a price, and one call again does both
     jobs on those turns.
+130. **Longer actions the agent aims itself: goto and repeat (long_actions).** On an easier world
+    (berries regrow, animals respawn, 3 zombies at most; runs/haiku_easy_plan_s153_5d and
+    haiku_easy_base_s153_5d) agents still died of hunger with food in reach. All 32 animals were
+    alive at almost every death. Hungry with an animal in view, an agent attacked it on 13 of 101
+    turns (2 of 36 without planning), a sword in hand on 63 of them. Holding seeds with water within
+    3 cells, it planted on 60 of 571 turns. Where a thing sits in the observation was not the cause:
+    creatures are listed last and a zombie in view is in the thought on 79 to 89% of turns, a sheep
+    on 10 to 19%. Getting food is a chain of small decisions (walk, walk, walk, hit, hit, hit, eat)
+    and at each one the agent can turn to something else. World key `long_actions: true` (default
+    false: the actions are unknown and the prompt is unchanged) adds two things that shorten the
+    chain without choosing the target. `goto` with x, y, z or with a creature's or agent's id walks,
+    one world step per cell, until the agent is beside it (within 1 cell sideways, and within reach
+    up or down): a shortest path over level steps, steps up one cell and safe falls, found again
+    every step. It ends when beside the target, hurt, something new comes into view (as move does),
+    another body is in the way, there is no way on foot (it first walks to the nearest cell it can
+    reach), the creature is gone, or after `goto_max_steps` (30). It never mines or builds.
+    `"repeat": 2 to 8` on any action does it that many times in a row and stops after a try that
+    fails or once the agent is hurt; the result is the last try that worked, with the count. Left
+    out on purpose: "hunt", "plant all my seeds", anything that names what to go after. What is
+    still ours: that walking somewhere is not a decision worth the agent's turns (finding the path
+    is taken to be no part of strategy).

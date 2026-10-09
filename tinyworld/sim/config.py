@@ -129,6 +129,8 @@ class WorldConfig(_M):
     vitals_lookback: int = 60          # observation shows health and food this many steps ago (0 = off)
     rule_notes: bool = True            # say why a craft failed or health is not rising, and list what was made
     recipe_book: bool = False          # list every craft (inputs, output, station) in the system prompt
+    long_actions: bool = False         # goto (walk to a cell or creature) and "repeat" on any action (DECISIONS 130)
+    goto_max_steps: int = 30           # world steps one goto may take
     day_length: int = 300
     night_start: int = 200
     dim_steps: int = 20

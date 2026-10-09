@@ -1061,8 +1061,129 @@ class World:
                    "eat": self._eat, "attack": self._attack, "wait": self._wait,
                    "store": self._store, "take": self._take_from, "drop": self._drop,
                    "jump": self._jump, "sleep": self._sleep, "say": self._say, "give": self._give,
+                   **({"goto": self._goto} if self.cfg.long_actions else {}),
                    }.get(name if isinstance(name, str) else "")
-        return handler(action) if handler else self._unknown(name)
+        if handler is None:
+            return self._unknown(name)
+        times = _int(action.get("repeat", 1)) if self.cfg.long_actions else 1
+        if times is not None and 2 <= times <= 8:
+            return self._repeat(handler, action, times)
+        return handler(action)
+
+    def _repeat(self, handler, action: dict, times: int):
+        """The same action up to `times` times in a row. Stops after a try that fails, or once the
+        agent has been hurt. The result is that of the last try that worked (of the failed one
+        when none did), with how many were done."""
+        done, text, desc = 0, "", ""
+        for _ in range(times):
+            t, valid, desc = yield from handler(action)
+            if not valid:
+                text = text or t
+                break
+            done, text = done + 1, t
+            if self._stop():
+                break
+        return text + T.REPEAT_DONE.format(n=done, m=times), done > 0, f"{desc} x{times}"
+
+    # ------------------------------------------------------------- goto
+
+    def _goto_target(self, a: dict):
+        """(kind, value): ("cell", (x, y, z)), ("id", creature or agent dict), or None."""
+        if a.get("id") is not None:
+            cid = _int(a.get("id"))
+            c = next((k for k in self.creatures + self.others() if k["id"] == cid), None)
+            return ("id", c) if c is not None else ("gone", cid)
+        p = self._xyz(a)
+        return ("cell", p) if p is not None and self.inb(*p) else None
+
+    def _beside(self, pos, tgt, dy: int) -> bool:
+        return max(abs(pos[0] - tgt[0]), abs(pos[2] - tgt[2])) <= 1 and abs(pos[1] - tgt[1]) <= dy
+
+    def _path_dir(self, tgt, dy: int, cap: int = 4000) -> tuple[str | None, bool]:
+        """First step of a shortest walk (level steps, steps up one cell, safe falls) to a cell
+        beside tgt, and whether such a cell can be reached at all. When it cannot, the step leads
+        to the reachable cell nearest to tgt, or is None when no cell is nearer than here."""
+        start = tuple(self.pos)
+        dist = lambda p: max(abs(p[0] - tgt[0]), abs(p[2] - tgt[2]))
+        first: dict = {start: None}
+        queue = deque([start])
+        best, best_d = start, dist(start)
+        while queue and len(first) < cap:
+            cur = queue.popleft()
+            for d in ("north", "south", "east", "west"):
+                step = self.walk_step(cur, d)
+                if step is None or step[1] > self.cfg.vitals.fall_safe or step[0] in first:
+                    continue
+                nxt = step[0]
+                first[nxt] = first[cur] or d
+                if self._beside(nxt, tgt, dy):
+                    return first[nxt], True
+                if dist(nxt) < best_d:
+                    best, best_d = nxt, dist(nxt)
+                queue.append(nxt)
+        return first[best], False
+
+    def _goto(self, a: dict):
+        """Walk until beside a cell or a creature. One world step per cell, like move."""
+        target = self._goto_target(a)
+        if target is None:
+            return T.BAD_ARGS, False, "goto"
+        if target[0] == "gone":
+            return T.NO_CREATURE.format(id=target[1]), False, f"goto #{target[1]}"
+        kind, what = target
+        desc = f"goto #{what['id']}" if kind == "id" else "goto ({}, {}, {})".format(*what)
+        dy = self.cfg.attack_reach if kind == "id" else self.cfg.reach
+        def where():
+            """The target cell now; None once a creature or agent is gone."""
+            if kind != "id":
+                return what
+            c = next((k for k in self.creatures + self.others() if k["id"] == what["id"]), None)
+            return None if c is None else tuple(c["pos"])
+        if self._beside(self.pos, where(), dy):
+            yield
+            return T.GOTO_ALREADY, True, desc
+        seen = {c["id"] for c in self.visible_creatures()}
+        moved, why = 0, ""
+        try:
+            for _ in range(self.cfg.goto_max_steps):
+                tgt = where()
+                if tgt is None:
+                    why = T.GOTO_GONE
+                    break
+                d, _reachable = self._path_dir(tgt, dy)
+                if d is None:
+                    why = T.GOTO_NO_WAY
+                    break
+                self.me.heading = d
+                before = list(self.pos)
+                self._move_once(d)
+                yield
+                if self.pos == before:
+                    why = T.GOTO_BLOCKED
+                    break
+                moved += 1
+                tgt = where()
+                if tgt is not None and self._beside(self.pos, tgt, dy):
+                    break
+                if self._stop():
+                    why = T.GOTO_HURT
+                    break
+                now = {c["id"] for c in self.visible_creatures()}
+                if now - seen:
+                    why = T.GOTO_NEW
+                    break
+                seen |= now
+            else:
+                why = T.GOTO_LIMIT.format(n=self.cfg.goto_max_steps)
+        finally:
+            self.me.heading = None
+        if moved == 0:
+            yield
+        x, y, z = self.pos
+        cells = "cell" if moved == 1 else "cells"
+        if not why:
+            return T.GOTO_THERE.format(n=moved, cells=cells, x=x, y=y, z=z), True, desc
+        return T.GOTO_PART.format(n=moved, cells=cells, x=x, y=y, z=z, why=why), True, desc
 
     def _unknown(self, name):
         return T.UNKNOWN_ACTION, False, _clean(name) or "none"
