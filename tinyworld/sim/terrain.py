@@ -24,6 +24,9 @@ def _noise(rng: np.random.Generator, nx: int, nz: int, scale: int) -> np.ndarray
 
 def generate(cfg: WorldConfig, rng: np.random.Generator):
     """Return (blocks[y, z, x] uint8, spawn (x, y, z), list of (kind, (x, y, z)))."""
+    if cfg.terrain.style == "varied":
+        from .terrain_varied import generate_varied
+        return generate_varied(cfg, rng)
     nx, ny, nz = cfg.size
     tc, sea = cfg.terrain, cfg.sea_level
     xx, zz = np.meshgrid(np.arange(nx), np.arange(nz))
@@ -35,6 +38,9 @@ def generate(cfg: WorldConfig, rng: np.random.Generator):
     # One hill and one lake, kept apart and away from the edge.
     lo, hi = tc.edge_width + 6, min(nx, nz) - tc.edge_width - 6
     hill = rng.integers(lo, hi, size=2)
+    if tc.hill_place == "corner":                         # the corner on the side the draw fell on
+        mid = (lo + hi) / 2
+        hill = np.array([lo if hill[0] < mid else hi - 1, lo if hill[1] < mid else hi - 1])
     lake = rng.integers(lo, hi, size=2)
     for _ in range(50):
         if np.abs(lake - hill).max() >= 16:
@@ -57,8 +63,13 @@ def generate(cfg: WorldConfig, rng: np.random.Generator):
     under = ys <= t3
     blocks[under] = ID["stone"]
     r = rng.random(blocks.shape)
-    blocks[under & (r < tc.coal_rate)] = ID["coal ore"]
-    blocks[under & (r >= tc.coal_rate) & (r < tc.coal_rate + tc.iron_rate)] = ID["iron ore"]
+    coal, iron = tc.coal_rate, tc.iron_rate
+    ore_ok = under
+    if tc.ore_radius > 0:                                 # ore only around the hill, and denser there
+        coal, iron = coal * tc.ore_boost, iron * tc.ore_boost
+        ore_ok = under & (d_hill <= tc.ore_radius)[None, :, :]
+    blocks[ore_ok & (r < coal)] = ID["coal ore"]
+    blocks[ore_ok & (r >= coal) & (r < coal + iron)] = ID["iron ore"]
     sand_col = t3 <= sea + 1
     grass_col = (t3 > sea + 1) & (t3 < tc.stone_line)
     blocks[under & sand_col & (ys > t3 - 3)] = ID["sand"]

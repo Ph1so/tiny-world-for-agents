@@ -531,8 +531,10 @@ def test_zombie_does_not_get_through_walls_or_doors():
     for dx, dz in ((1, 0), (-1, 0), (0, 1)):
         w.set_block(32 + dx, 10, 32 + dz, "stone")
         w.set_block(32 + dx, 11, 32 + dz, "stone")
-    w.set_block(32, 10, 31, "door")           # a doorway for the agent is two doors high
-    w.set_block(32, 11, 31, "door")
+    w._add("door", 1)                         # one door fills a two-high doorway
+    w.step({"name": "place", "item": "door", "x": 32, "y": 10, "z": 31})
+    assert w.block(32, 11, 31) == "door"
+    assert "(32,10,31)" not in w.observe().split("\n")[2] and "(32,11,31)" not in w.observe().split("\n")[2]
     w.set_block(32, 12, 32, "stone")
     w._spawn("zombie", (32, 10, 28))
     for _ in range(60):
@@ -540,6 +542,9 @@ def test_zombie_does_not_get_through_walls_or_doors():
     assert w.health == 20
     r = w.step({"name": "move", "dir": "north", "steps": 1})   # the agent can stand in the door
     assert w.pos == [32, 10, 31]
+    w.step({"name": "move", "dir": "south", "steps": 1})
+    w.step({"name": "mine", "x": 32, "y": 11, "z": 31})        # breaking either half takes both
+    assert w.block(32, 10, 31) == "air" and w.block(32, 11, 31) == "air" and w.inv.get("door") == 1
 
 
 # ---------------------------------------------------------------- notice

@@ -124,6 +124,35 @@ def made_line(world) -> str | None:
     return T.OBS_MADE.format(items="; ".join(parts))
 
 
+def placed_line(world) -> str | None:
+    """Structures and crops this agent placed that still stand, grouped by kind; chests with
+    what they hold. A crop shows as it is now: a sprout, or wheat once ripe."""
+    seen: set = set()
+    groups: dict[str, list] = {}
+    chests: list[str] = []
+    for name, (x, y, z) in world.placed:
+        if (x, y, z) in seen:
+            continue
+        now = world.block(x, y, z)
+        if not (now == name or (name == "sprout" and now == "wheat")):
+            continue
+        seen.add((x, y, z))
+        if now == "chest":
+            held = world.chests.get((x, y, z), {})
+            chests.append(T.OBS_PLACED_CHEST.format(name=world.dn("chest"), x=x, y=y, z=z,
+                                                    items=world._items_text(held) if held else T.OBS_EMPTY))
+        else:
+            groups.setdefault(now, []).append((x, y, z))
+    if not groups and not chests:
+        return None
+    parts = []
+    for name, cells in groups.items():
+        coords = " ".join(f"({x},{y},{z})" for x, y, z in cells[:6])
+        more = T.OBS_PLACED_MORE.format(n=len(cells) - 6) if len(cells) > 6 else ""
+        parts.append(T.OBS_PLACED_ONE.format(name=world.dn(name), coords=coords) + more)
+    return T.OBS_PLACED.format(items="; ".join(chests[:4] + parts))
+
+
 def render(world) -> str:
     c, v = world.cfg, world.cfg.vitals
     x, y, z = world.pos
@@ -134,10 +163,11 @@ def render(world) -> str:
     ]
     if world.multi:
         out.insert(1, T.OBS_SELF.format(id=world.me.id))
-    out += [
-        open_beside_line(world),
-        vitals_line(world),
-    ]
+    out += [open_beside_line(world)]
+    closed = world.enclosure() if c.rule_notes else None
+    if closed is not None:
+        out.append(T.OBS_CLOSED.format(n=closed))
+    out += [vitals_line(world)]
     if c.rule_notes and world.health < v.max_health and world.food < v.heal_food_min:
         out.append(T.OBS_NO_HEAL.format(n=v.heal_food_min))
     if world.wet():
@@ -160,6 +190,9 @@ def render(world) -> str:
     made = made_line(world) if c.rule_notes else None
     if made:
         out.append(made)
+    placed = placed_line(world) if c.rule_notes else None
+    if placed:
+        out.append(placed)
     if world.bed is not None:
         out.append(T.OBS_RESPAWN.format(bed=world.dn("bed"), x=world.bed[0], y=world.bed[1], z=world.bed[2]))
     if world.last_action is not None:

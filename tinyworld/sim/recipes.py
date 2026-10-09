@@ -47,6 +47,7 @@ BASE: list[Recipe] = [
     _r({"iron ore": 1, "fuel": 1}, "iron ingot", 1, "furnace"),
     _r({"wheat": 3}, "bread"),
     _r({"wool": 3, "planks": 3}, "bed", 1, "workbench"),
+    _r({"wheat": 3, "planks": 3}, "bed", 1, "workbench"),     # a straw bed: wool is scarce, wheat is farmed
 ]
 
 # Kept out of the shuffle: wheat takes a crop's growing time and wool a sheep each, so swapped

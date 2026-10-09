@@ -27,6 +27,7 @@ _SOLID_ROOF[ID["leaves"]] = False
 _NEIGHBOURS = [(1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1)]
 _OPPOSITE = {"north": "south", "south": "north", "east": "west", "west": "east", "up": "down", "down": "up"}
 WORLD_EVENTS = {"day_start", "night_start", "weather"}   # not about any one agent
+STRUCTURES = {"workbench", "furnace", "chest", "bed", "door", "torch"}   # placements listed in the observation
 
 
 @dataclass
@@ -82,6 +83,7 @@ class World:
         self.chests: dict[Pos, dict[str, int]] = {}      # chest cell -> items in it; kept through death
         self.world_spawn: Pos = tuple(self.spawn)        # where the first body starts
         self._reset_vitals()
+        self._give_start_items()
         self.creatures: list[dict] = []
         self._next_id = 1
         for kind, pos in start:
@@ -94,6 +96,7 @@ class World:
         self.crops: dict[Pos, int] = {}                  # sprout cell -> growth so far
         self.bed: Pos | None = None                      # respawn point once slept in; kept through death
         self._asleep = False
+        self._wild_wheat()
         # output -> (items used, count made), the first way each thing was made. Kept through death
         # unless the memory is wiped, as it stands for what the agent knows.
         self.made: dict[str, tuple[dict[str, int], int]] = {}
@@ -211,8 +214,17 @@ class World:
             cell = self._free_cell_near(self.world_spawn)
             b.spawn, b.pos = cell, list(cell)
             self._reset_vitals()
+            self._give_start_items()
         self.me = me
         return b
+
+    def _give_start_items(self) -> None:
+        """start_items into the current body's inventory (a new agent; not on respawn)."""
+        for item, n in self.cfg.start_items.items():
+            if item not in defs.ITEMS:
+                raise ValueError(f"start_items: unknown item {item!r}")
+            if n > 0:
+                self._add(item, int(n))
 
     def _free_cell_near(self, p) -> Pos:
         """The nearest dry standing cell to p (sideways rings, any height) that no agent or
@@ -474,8 +486,10 @@ class World:
                             c["pos"] = list(tgt)
                             c.pop("break", None)
                             moved = True
+                            if self.cfg.farming.zombies_trample:
+                                self._trample(tgt)
                             break
-                    if not moved and cc.zombie_breaks:
+                    if not moved and (cc.zombie_breaks or self.cfg.farming.zombies_trample):
                         self._zombie_break(c, order)
                     continue
                 if self.rng.random() < 0.5:
@@ -551,7 +565,9 @@ class World:
         Progress is per zombie and resets if it turns to a different cell. Blocks not in
         zombie_breaks (stone, workbench, furnace, door) stop it, so a stone box is safe.
         """
-        breaks = self.cfg.creatures.zombie_breaks
+        breaks = list(self.cfg.creatures.zombie_breaks)
+        if self.cfg.farming.zombies_trample:
+            breaks += ["sprout", "wheat"]
         x, y, z = c["pos"]
         for o in order:
             dx, _, dz = DIRS[o]
@@ -563,6 +579,8 @@ class World:
                 prog = [list(cell), 0]
             prog[1] += 1
             if prog[1] >= self.cfg.creatures.zombie_break_steps:
+                if self.block(*cell) in ("sprout", "wheat"):
+                    self._event("crop_trampled", {"pos": list(cell)})
                 self.set_block(*cell, "air")
                 c.pop("break", None)
             else:
@@ -671,6 +689,56 @@ class World:
             self.weather = new
             self._event("weather", {"weather": new})
 
+    def _wild_wheat(self) -> None:
+        """A few patches of ripe wheat on open soil by water, so wheat (and the seeds it gives) can
+        be found. Its own random stream: the terrain, creatures and every later draw are unchanged."""
+        f = self.cfg.farming
+        if f.wild_patches <= 0 or f.wild_per_patch <= 0:
+            return
+        rng = np.random.default_rng([self.seed, 0xEA7])
+        b = self.blocks
+        top = self.sy - 1 - np.argmax((b != AIR)[::-1], axis=0)                 # (z, x)
+        zs, xs = np.indices(top.shape)
+        soil = np.isin(b[top, zs, xs], [ID[n] for n in defs.SOIL]) & (top + 1 < self.sy)
+        sx, _, sz = self.spawn
+        taken = {tuple(c["pos"]) for c in self.creatures}
+        cells = [(int(x), int(top[z, x]) + 1, int(z)) for z, x in zip(*np.nonzero(soil))
+                 if max(abs(x - sx), abs(z - sz)) > 2]
+        cells = [p for p in cells if p not in taken and self._water_near(p)]
+        for _ in range(f.wild_patches):
+            if not cells:
+                return
+            cx, _, cz = cells[int(rng.integers(len(cells)))]
+            near = [p for p in cells if max(abs(p[0] - cx), abs(p[2] - cz)) <= 2]
+            for k in rng.permutation(len(near))[:f.wild_per_patch]:
+                x, y, z = near[int(k)]
+                b[y, z, x] = defs.WHEAT
+            cells = [p for p in cells if b[p[1], p[2], p[0]] == AIR]
+
+    def _trample(self, pos) -> None:
+        """A zombie that stepped up onto a sprout or wheat crushes it (it drops onto the soil)."""
+        x, y, z = pos
+        if self.bid(x, y - 1, z) in (defs.SPROUT, defs.WHEAT):
+            self.set_block(x, y - 1, z, "air")
+            self._event("crop_trampled", {"pos": [x, y - 1, z]})
+
+    def _animals_eat(self) -> None:
+        """With animal_eat_prob, a sheep or chicken beside a sprout or wheat (sideways, same level)
+        may eat it. Draws come from the farming stream, only while crops stand next to animals."""
+        p = self.cfg.farming.animal_eat_prob
+        if p <= 0:
+            return
+        for c in self.creatures:
+            if c["kind"] not in defs.PASSIVE:
+                continue
+            x, y, z = c["pos"]
+            for dx, dz in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                q = (x + dx, y, z + dz)
+                if self.inb(*q) and self.bid(*q) in (defs.SPROUT, defs.WHEAT) and self._farm_rng.random() < p:
+                    self.set_block(*q, "air")
+                    self._event("crop_eaten", {"kind": c["kind"], "pos": list(q)})
+                    break
+
     def _crops_tick(self) -> None:
         """Each sprout grows one step, two in rain or a storm with nothing solid above it, and
         turns into wheat at grow_steps."""
@@ -691,20 +759,46 @@ class World:
         return LIGHTS[self._sky_level()]
 
     def open_beside(self) -> list[tuple[str, Pos]]:
-        """Cells touching the body that are not solid, where a zombie could reach it: the four
-        sides at feet and at head level, and the cell above the head."""
+        """Cells touching the body that a creature could stand in, where a zombie could reach it
+        from: the four sides at feet and at head level, and the cell above the head. Doors and
+        water are not among them (creatures do not enter either)."""
         x, y, z = self.pos
         out = []
         for level, yy in (("feet", y), ("head", y + 1)):
             for d in defs.HORIZONTAL:
                 dx, _, dz = DIRS[d]
                 p = (x + dx, yy, z + dz)
-                if self.inb(*p) and AGENT_PASS[self.bid(*p)]:
+                if self.inb(*p) and CREATURE_PASS[self.bid(*p)]:
                     out.append((f"{level} {d}", p))
         p = (x, y + 2, z)
-        if self.inb(*p) and AGENT_PASS[self.bid(*p)]:
+        if self.inb(*p) and CREATURE_PASS[self.bid(*p)]:
             out.append(("above head", p))
         return out
+
+    def enclosure(self, cap: int = 200) -> int | None:
+        """Floor cells of the closed space the agent is in: the cells a creature could pass through
+        (air, torch) joined face to face to the agent's two cells, if they close off before cap
+        cells and before the map's edge or top. None when open. Doors, leaves and every solid
+        block count as closed; the space must have a roof."""
+        x, y, z = self.pos
+        start = [(x, y, z), (x, y + 1, z)]
+        seen = set(start)
+        todo = list(start)
+        while todo:
+            px, py, pz = todo.pop()
+            for dx, dy, dz in _NEIGHBOURS:
+                q = (px + dx, py + dy, pz + dz)
+                if q in seen:
+                    continue
+                if not self.inb(*q):
+                    return None
+                if not CREATURE_PASS[self.bid(*q)]:
+                    continue
+                seen.add(q)
+                if len(seen) > cap:
+                    return None
+                todo.append(q)
+        return sum(1 for (cx, cy, cz) in seen if SUPPORT[self.bid(cx, cy - 1, cz)] and (cx, cy + 1, cz) in seen)
 
     def light(self) -> str:
         c = self.cfg
@@ -756,6 +850,7 @@ class World:
             else:
                 due[0] = self.t + 10
         self._crops_tick()
+        self._animals_eat()
 
         me = self.me
         bodies = self.living()
@@ -806,10 +901,13 @@ class World:
 
     def _respawn_passives(self) -> None:
         cc = self.cfg.creatures
-        respawn = max(0, int(round(cc.passive_respawn * cc.animal_count_mult)))
+        expect = max(0.0, cc.passive_respawn * cc.animal_count_mult)
         pmax = max(0, int(round(cc.passive_max * cc.animal_count_mult)))
         for kind in defs.PASSIVE:
             n = sum(k["kind"] == kind for k in self.creatures)
+            # A fractional rate is a chance: 0.5 is one about every other morning. Whole rates draw
+            # nothing extra, so runs that use them are unchanged.
+            respawn = int(expect) + (int(self._farm_rng.random() < expect % 1) if expect % 1 else 0)
             for _ in range(min(respawn, pmax - n)):
                 for _ in range(20):
                     x, z = int(self.rng.integers(3, self.sx - 3)), int(self.rng.integers(3, self.sz - 3))
@@ -843,6 +941,10 @@ class World:
             self._death_notice = T.DIED_RESPAWN_BED.format(cause=self.dn(cause), bed=self.dn("bed"), x=bx, y=by, z=bz)
         else:
             self._death_notice = T.DIED_RESPAWN.format(cause=self.dn(cause))
+        if self.cfg.rule_notes:
+            if not at_bed:
+                self._death_notice += T.DIED_BED_NOTE.format(bed=self.dn("bed"))
+            self._death_notice += T.DIED_CHEST_NOTE.format(chest=self.dn("chest"))
         self._event("respawn", {"pos": list(self.pos)})
 
     def _bed_cell(self) -> Pos | None:
@@ -1074,6 +1176,12 @@ class World:
             if self._stop():
                 return T.NOT_BROKEN, True, desc
         self.set_block(*p, "air")
+        if block == "door":                           # the other half of a two-high door goes too
+            for dy in (1, -1):
+                q = (p[0], p[1] + dy, p[2])
+                if self.inb(*q) and self.bid(*q) == defs.DOOR:
+                    self.set_block(*q, "air")
+                    break
         self.chests.pop(tuple(p), None)
         self.crops.pop(tuple(p), None)
         if tuple(p) == self.bed:
@@ -1127,6 +1235,7 @@ class World:
                                         r=self.cfg.farming.water_dist), True, desc
         self.set_block(*p, defs.PLANTS[item])
         self.crops[tuple(p)] = 0
+        self.placed.append([defs.PLANTS[item], [x, y, z]])
         self._take(item, 1)
         self._first("place", item, "block")
         yield
@@ -1153,6 +1262,12 @@ class World:
         self.set_block(*p, item)
         if item == "chest":
             self.chests[tuple(p)] = {}
+        if item == "door":                            # a doorway is two cells high, like an agent
+            up = (p[0], p[1] + 1, p[2])
+            if self.inb(*up) and self.bid(*up) in (AIR, WATER) and not self._occupied(*up) and not self._agent_in(*up):
+                self.set_block(*up, "door")
+        if item in STRUCTURES:
+            self.placed.append([item, list(p)])
         self._take(item, 1)
         self._first("place", item, "block")
         yield
@@ -1379,6 +1494,8 @@ class World:
         self.set_block(x, y, z, item)
         if item == "chest":
             self.chests[(x, y, z)] = {}
+        if item in STRUCTURES:
+            self.placed.append([item, [x, y, z]])
         self._take(item, 1)
         self._first("place", item, "block")
         yield

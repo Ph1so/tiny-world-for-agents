@@ -98,7 +98,14 @@ def test_recipe_book_off_by_default_and_lists_every_craft_when_on():
     prompt = build_system_prompt(world, 3, 2000)
     assert banned_in(prompt) == []
     book = prompt.split(T.BOOK_HEADER, 1)[1]
-    assert len([l for l in book.splitlines() if " -> " in l]) == len(world.recipes)
+    crafts, grows = book.split(T.BOOK_USE_HEADER)[0], book.split(T.BOOK_GROW_HEADER)[1]
+    assert len([l for l in crafts.splitlines() if " -> " in l]) == len(world.recipes)
+    assert "seeds placed with place in an empty cell on dirt or grass, with water within 4 cells" in grows
+    assert "become a sprout. A sprout turns into wheat after 300 steps" in grows
+    assert "A wheat block is ripe: mining it gives 2 wheat" in grows
+    uses = book.split(T.BOOK_USE_HEADER)[1].split(T.BOOK_GROW_HEADER)[0]
+    assert "after a death you come back beside the bed you last slept at" in uses
+    assert "what is in it stays when you die" in uses and "creatures do not" in uses
     assert "3 iron ingot -> 1 iron helmet (with a workbench within 2 cells)" in book
     assert "1 iron ore + 1 coal or planks -> 1 iron ingot (with a furnace within 2 cells)" in book
     assert "1 log -> 4 planks\n" in book

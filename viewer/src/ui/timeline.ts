@@ -53,7 +53,7 @@ export class Timeline {
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     const curI = run.agentStepIndexAt(t);
     const maxI = Math.max(run.steps.length ? run.steps[run.steps.length - 1].i : 0, curI, 1);
-    const key = `${w}x${h}:${run.memory.length}:${curI}:${maxI}:${this.hover}`;
+    const key = `${w}x${h}:${run.memory.length}:${curI}:${maxI}:${this.hover}:${run.agentGen}`;
     if (key === this.lastKey) return;
     this.lastKey = key;
     if (this.canvas.width !== w * dpr || this.canvas.height !== h * dpr) { this.canvas.width = w * dpr; this.canvas.height = h * dpr; }

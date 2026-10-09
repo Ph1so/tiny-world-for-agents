@@ -17,6 +17,7 @@ def flat_world(seed: int = 1, **overrides) -> World:
     w.spawn = (32, 10, 32)
     w.creatures = []
     w._next_id = 1
+    w.cfg.farming.seed_chance = 0.0                     # no plants: grass gives only grass
     return w
 
 

@@ -4,7 +4,7 @@
 //   /compare?a=ID&b=ID    two runs side by side with one scrubber
 //   /                     run picker
 // Extra query keys: t=STEP (start there, paused), cam=orbit|follow|map|pov, names=both (alien names on),
-// debug=1 (draw call counter).
+// agent=NAME or ID (multi-agent: the agent to follow; kept up to date as you switch), debug=1 (draw call counter).
 import "./style.css";
 import { getOptions, listRuns, type RunListEntry } from "./data/source";
 import { Player } from "./player";
@@ -80,6 +80,14 @@ function mount(views: RunView[], player: Player, names: NameOpts, live: boolean)
     const rc = new RunControlBar(first.run.meta.runId, live);
     rc.onState = (s) => { first.runState = s; };
     controls.root.append(rc.root);
+    // Following another agent puts its name in the address, so a reload or a shared link keeps it.
+    first.status.onSelectAgent = (id) => {
+      first.run.selectAgent(id);
+      const name = first.run.snapshot?.agents?.find((g) => g.id === id)?.name ?? String(id);
+      const u = new URL(location.href);
+      u.searchParams.set("agent", name);
+      history.replaceState(null, "", u);
+    };
   }
   app.append(header, stageRow, controls.root);
   for (const v of views) v.resize();
@@ -95,6 +103,9 @@ function mount(views: RunView[], player: Player, names: NameOpts, live: boolean)
     player.maxT = Math.max(0, maxT);
     if (!started && views.every((v) => v.run.ready) && views.some((v) => v.run.maxT > 0)) {
       started = true;
+      const want = views.length === 1 ? params.get("agent")?.toLowerCase() : undefined;
+      const pick = want ? first.run.snapshot?.agents?.find((g) => g.name?.toLowerCase() === want || String(g.id) === want) : undefined;
+      if (pick) first.run.selectAgent(pick.id);
       if (live) { player.seek(player.maxT); player.play(); }
       else if (params.has("t")) player.seek(Number(params.get("t")));
       else player.play();

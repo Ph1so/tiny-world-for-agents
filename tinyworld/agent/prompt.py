@@ -105,6 +105,19 @@ def book_lines(world) -> str:
         station = T.BOOK_STATION.format(station=world.dn(r.station), r=c.station_reach) if r.station else ""
         lines.append(T.BOOK_LINE.format(inputs=" + ".join(count(i, n) for i, n in r.inputs),
                                         output=count(r.output, r.count), station=station))
+    cc = c.creatures
+    lines += ["", T.BOOK_USE_HEADER,
+              T.BOOK_USE_BED.format(bed=world.dn("bed"), r=c.reach),
+              T.BOOK_USE_CHEST.format(chest=world.dn("chest"), n=c.chest_slots),
+              T.BOOK_USE_DOOR.format(door=world.dn("door")),
+              T.BOOK_USE_TORCH.format(torch=world.dn("torch"), r=cc.torch_radius, l=c.torch_light)]
+    if c.weather.enabled:
+        lines.append(T.BOOK_USE_ROOF.format(leaves=world.dn("leaves"), torch=world.dn("torch")))
+    f = c.farming
+    lines += ["", T.BOOK_GROW_HEADER, T.BOOK_GROW.format(
+        seeds=world.dn("seeds"), soil=" or ".join(world.dn(s) for s in ("dirt", "grass")), water=world.dn("water"),
+        r=f.water_dist, wheat=world.dn("wheat"), n=f.grow_steps, w=f.wheat_per_crop, s=f.seeds_per_crop,
+        grass=world.dn("grass"), sprout=world.dn("sprout"))]
     return "\n".join(lines)
 
 

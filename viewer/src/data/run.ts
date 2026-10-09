@@ -57,6 +57,10 @@ export class RunData {
   /** Multi-agent runs: the agent the panels and camera follow (the first), and every agent's
    *  steps and memory lines. The followed agent's also fill steps / stepByI / memory. */
   primaryAgent: number | null = null;
+  /** The agent the world lines' `agent` and `i` describe (the first). selectAgent can follow another. */
+  private nativeAgent: number | null = null;
+  /** Bumped whenever the followed agent changes, so panels can drop what they cached. */
+  agentGen = 0;
   stepsByAgent: Map<number, StepLine[]> = new Map();
   memoryByAgent: Map<number, MemoryLine[]> = new Map();
   /** prompts.json: the system prompt per agent ("0" when alone), K and the memory size. */
@@ -134,7 +138,7 @@ export class RunData {
       this.blocksT = 0;
       this.state0 = null;
       if (line.agents?.length) {
-        this.primaryAgent = line.agents[0].id;
+        this.primaryAgent = this.nativeAgent = line.agents[0].id;
         for (const st of this.stepsByAgent.get(this.primaryAgent) ?? []) { this.steps.push(st); this.stepByI.set(st.i, st); }
         for (const m of this.memoryByAgent.get(this.primaryAgent) ?? []) this.memory.push(m);
       }
@@ -181,6 +185,46 @@ export class RunData {
     return best;
   }
 
+  /** Multi-agent: follow another agent. Panels, cameras and the main body show it from now on. */
+  selectAgent(id: number): void {
+    if (id === this.primaryAgent || !this.stepsByAgent.has(id) && !this.snapshot?.agents?.some((g) => g.id === id)) return;
+    this.primaryAgent = id;
+    this.steps = (this.stepsByAgent.get(id) ?? []).slice();
+    this.stepByI = new Map(this.steps.map((s) => [s.i, s]));
+    this.memory = (this.memoryByAgent.get(id) ?? []).slice();
+    this.followed.clear();
+    this.agentGen++;
+    this.version++;
+  }
+
+  /** The followed agent's step at world step t: its last step observed before t (0 before any). */
+  private stepIndexFor(agent: number, t: number): number {
+    const list = this.stepsByAgent.get(agent);
+    if (!list || t <= 0) return 0;
+    let lo = 0, hi = list.length - 1, ans = -1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if ((list[mid].t_obs ?? list[mid].t_start) < t) { ans = mid; lo = mid + 1; } else hi = mid - 1;
+    }
+    return ans < 0 ? 0 : list[ans].i;
+  }
+
+  /** World states rewritten for a followed agent other than the first: t -> [steps known, state]. */
+  private followed = new Map<number, [number, WorldState]>();
+
+  private asFollowed(line: WorldState): WorldState {
+    const id = this.primaryAgent;
+    if (id === null || id === this.nativeAgent || !line.agents) return line;
+    const known = this.stepsByAgent.get(id)?.length ?? 0;
+    const hit = this.followed.get(line.t);
+    if (hit && hit[0] === known) return hit[1];
+    const me = line.agents.find((g) => g.id === id);
+    if (!me) return line;
+    const s: WorldState = { ...line, agent: me, i: this.stepIndexFor(id, line.t) };
+    this.followed.set(line.t, [known, s]);
+    return s;
+  }
+
   // ------------------------------------------------------------------ queries
 
   index(x: number, y: number, z: number): number {
@@ -206,7 +250,7 @@ export class RunData {
         this.state0 = { t: 0, i: 0, agent: s.agent, creatures: s.creatures, light: s.light, day: s.day, chests: s.chests,
                         weather: s.weather, bed: s.bed, agents: s.agents };
       }
-      return this.state0;
+      return this.asFollowed(this.state0);
     }
     let line = this.worldByT[t];
     if (!line) {
@@ -214,11 +258,12 @@ export class RunData {
       for (let k = t - 1; k >= 1; k--) { line = this.worldByT[k]; if (line) break; }
       if (!line) return this.stateAt(0);
     }
-    return line;
+    return this.asFollowed(line);
   }
 
   /** The agent step that world step t belongs to (0 before the first). */
   agentStepIndexAt(t: number): number {
+    if (this.primaryAgent !== this.nativeAgent) return this.stepIndexFor(this.primaryAgent!, t);
     const line = this.worldByT[t];
     return line ? line.i : 0;
   }

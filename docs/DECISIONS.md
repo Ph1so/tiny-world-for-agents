@@ -474,3 +474,81 @@ as-is.
     The form shows a rough time and cost (from past Haiku runs: about $0.00043 and 3 s per
     decision, about 2 world steps per action). Stopped multi-agent runs cannot be resumed yet;
     the server says so.
+115. **Farming made findable: wild wheat, a growing line in the book, more seeds.** In
+    runs/3agents_20261008_213436 (3 Haiku agents, recipe book on) only one agent ever got seeds
+    (2, from 10 grass blocks), it tried to eat them while starving, and nobody planted: the book
+    listed "3 wheat -> 1 bread" but nothing said where wheat comes from, and grass is worth
+    mining for nothing else. Now (a) every new map gets `farming.wild_patches` (3) patches of up
+    to `wild_per_patch` (4) ripe wheat on open soil by water, from their own random stream, so
+    terrain, creatures and every later draw are unchanged (tested: the wheat cells are the only
+    difference); (b) the recipe book gains a "What grows:" line: seeds placed on dirt or grass
+    with water near become wheat after grow_steps, mining wheat gives wheat and seeds, mining
+    grass sometimes gives seeds; (c) `seed_chance` 0.25 -> 0.5. The flat test arena turns seed
+    drops off. The bot finds wild wheat and bakes bread much earlier, but the extra detours put
+    some seeds past 2100 steps, so its tests now run 2400.
+116. **The growing line names the sprout.** In runs/3agents_farm_s153 all three planted crops
+    ripened (steps 639, 663, 855) and nobody harvested: the book said seeds become "wheat"
+    after 300 steps, but the world shows a "sprout" first, so Ada took "wheat" for the young
+    plant and kept noting "avoid the unripe wheat" while starving beside ripe wild wheat for
+    about 200 steps. The line now reads: seeds placed in an empty cell on dirt or grass with
+    water near become a sprout; a sprout turns into wheat after grow_steps; a wheat block is
+    ripe and mining it gives wheat and seeds; mining a sprout gives its seeds back.
+117. **Multi-agent runs can be resumed and extended.** `python -m tinyworld.runner.multi
+    --run-id NAME --resume --max-steps N` continues a stopped run or extends a finished one to N
+    world steps, appending to its files and recording the extension under `extended` in its
+    config. The world is rebuilt by applying every logged action at the world step it started on;
+    with the engine's seeded order and separate random streams that reproduces the run exactly
+    (tested against the logged results and world lines). Actions still under way when a run ends
+    are now saved to inflight.json and put back on resume; runs from before that lose those last
+    few actions. Each agent's memory file, last K action/results, step count and costs are
+    restored; death notices and heard lines piled up by the replay are dropped (the agents saw
+    them at the time). First used to extend runs/3agents_scarce_s153 from 2400 to 4800.
+118. **Ore in one corner, a starting kit, bigger memory.** To give exploring and farming a reason:
+    `terrain.hill_place: corner` puts the stone hill (and with it the ore seen on bare stone) in
+    the corner of the land on the side the seeded draw fell, and `terrain.ore_radius` (> 0) keeps
+    all coal and iron ore within that many cells of the hill, at `ore_boost` (2x) the usual rate.
+    With corner + 14 on seed 153 the ore sits around (47,47), about 22 cells from the start, out
+    of sight. `start_items` gives every new agent items (e.g. seeds and bread), not again on
+    respawn. The form gains these plus animal respawn, berry regrowth, wheat per crop and bread
+    value, and its default memory file is 4000 characters (agents in runs/3agents_scarce_s153
+    hit the 2000 limit often: Ada had 18 rejected edits).
+119. **Reasons for a base, without saying "build a base".** In runs/3agents_economy_s153 the
+    agents farmed but never built around their fields, used a chest, or slept in a bed, and
+    every zombie death threw their seeds, wheat and bread away; after respawning they went for
+    remembered berry bushes rather than their own crops. Three changes, none an instruction:
+    (a) the recipe book gains "What some things do:" with facts the book had left out: a bed
+    sets where you come back after a death, a chest's contents stay when you die and a chest
+    with items will not break, creatures cannot pass a door, no zombies appear near a torch,
+    and (with weather) rain falls where nothing shuts out the sky; (b) with rule_notes, the
+    observation lists "things you have placed": the agent's standing workbenches, furnaces,
+    chests (with contents), beds, doors, torches and crops (shown as sprout or, once ripe,
+    wheat), so a death no longer erases where home is; (c) two crop threats a wall answers,
+    both off by default and in the form: `farming.zombies_trample` (a chasing zombie that
+    steps onto a crop crushes it) and `farming.animal_eat_prob` (a sheep or chicken beside a
+    crop may eat it). New events crop_trampled and crop_eaten.
+120. **The death notice says what a death does not take.** Through day 8 of
+    runs/3agents_base_s153 no agent used, built or even mentioned a chest, while deaths took
+    an iron pickaxe, bread and seeds; the chest line in the recipe book was one of about thirty.
+    With rule_notes on, the respawn notice now ends "Your items are gone. What is in a chest is
+    not lost." (DIED_CHEST_NOTE), the fact placed where the loss is read, like the other rule notes.
+121. **Beds within reach, rooms instead of boxes, food that never dies out.** In
+    runs/3agents_base_s153 the six sheep (no respawn) gave 5 wool all run, so the 3-wool bed was
+    nearly impossible, and every shelter was a 1-cell box: the observation lists "open cells
+    touching you", and sealing exactly those cells is the best answer to it. (a) A straw bed: 3
+    wheat + 3 planks at a workbench also makes a bed (wool is scarce, wheat is farmed). (b) After a
+    death with no bed to come back to, the notice adds "Sleeping at a bed makes you come back beside
+    it." (c) With rule_notes, when the cells a creature could pass through around the agent close
+    off within 200 cells (doors, leaves and solid blocks count as closed, a roof is needed), the
+    observation says "you are in a closed space of N floor cells: no open path for creatures leads
+    outside", so a room reads as safe as a box. (d) `creatures.passive_respawn` may be a fraction,
+    a chance per morning (0.5 is about one sheep and one chicken every other day; whole numbers draw
+    nothing extra), so animals thin out without dying out; slow berries are a long bush_regrow.
+122. **Doors are two cells high; doors are not openings.** In runs/3agents_base_s153 Cy placed
+    the run's first door. A one-cell door at foot level leaves the cell above open, and a blocked
+    zombie steps up onto the door (it can be stood on) and over it, so a one-cell door kept nothing
+    out. Placing a door now also fills the cell above it with door if that cell is empty; breaking
+    either half removes both and gives one door back; with a block already above, a one-cell door
+    is enough. The book line says so. Also, "open cells touching you" is meant as the cells a
+    zombie could reach the agent from, but it listed every cell the agent could enter, doors
+    included (Cy's own door showed as "feet north (9,17,27)"); it now lists only cells a creature
+    can stand in (air, torch), so doors and water are no longer reported as openings.

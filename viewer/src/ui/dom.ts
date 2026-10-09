@@ -62,6 +62,8 @@ export function fmtEvent(e: { type: string; detail: Record<string, unknown> }, r
 function eventBody(e: { type: string }, d: Record<string, unknown>, rename: (n: string) => string): string {
   switch (e.type) {
     case "say": return `said "${String(d.text)}"`;
+    case "crop_trampled": return `a zombie crushed a crop at (${(d.pos as number[]).join(",")})`;
+    case "crop_eaten": return `a ${rename(String(d.kind))} ate a crop at (${(d.pos as number[]).join(",")})`;
     case "give": return `gave ${Object.entries((d.items ?? {}) as Record<string, number>).map(([k, v]) => `${rename(k)} x${v}`).join(", ")} to #${d.to}`;
     case "first_mine": return `first mined ${rename(String(d.block))}`;
     case "first_place": return `first placed ${rename(String(d.block))}`;
@@ -90,5 +92,5 @@ function eventBody(e: { type: string }, d: Record<string, unknown>, rename: (n: 
 export const EVENT_ICON: Record<string, string> = {
   first_mine: "⛏", first_place: "🧱", first_craft: "🔨", first_eat: "🍓", craft_fail: "✖", death: "💀",
   respawn: "✨", kill: "⚔", hurt: "💢", night_start: "🌙", day_start: "☀", tool_broke: "💥",
-  memory_rejected: "🚫", parse_fail: "❓", stuck: "⛓", weather: "🌧", sleep: "💤", say: "💬", give: "🎁",
+  memory_rejected: "🚫", parse_fail: "❓", stuck: "⛓", weather: "🌧", sleep: "💤", say: "💬", give: "🎁", crop_trampled: "🥀", crop_eaten: "🐑",
 };

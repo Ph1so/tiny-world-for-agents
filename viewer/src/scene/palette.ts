@@ -10,12 +10,12 @@ export const BLOCK_COLORS: Record<string, number> = {
   water: 0x7ec9f0,
   log: 0xa97c55,
   leaves: 0x6fc48d,
-  "berry bush": 0xd47f99,
-  "coal ore": 0x7a7585,
-  "iron ore": 0xe0a884,
+  "berry bush": 0x3f9a5a,
+  "coal ore": 0x3d3a45,
+  "iron ore": 0xe08a4f,
   planks: 0xe6bd85,
-  workbench: 0xcf9152,
-  furnace: 0x8d8a99,
+  workbench: 0xa8743f,
+  furnace: 0x6f6873,
   torch: 0xffd56a,
   door: 0xbd7f45,
   chest: 0xb07a3e,
@@ -28,17 +28,41 @@ export const BLOCK_COLORS: Record<string, number> = {
 export const TOP_TINT: Record<string, number> = {
   grass: 0x9ee08c,
   log: 0xcaa67c,
-  "berry bush": 0xe493ab,
-  workbench: 0xdfa86a,
+  workbench: 0xe8c08a,
+  furnace: 0x57525e,
   chest: 0xc99556,
   bed: 0xf4efe6,
+  "coal ore": 0xadafbd,
+  "iron ore": 0xbdb5b6,
 };
 
 export const SIDE_TINT: Record<string, number> = {
   grass: 0x86c27a,
+  "coal ore": 0xadafbd,
+  "iron ore": 0xbdb5b6,
 };
 
-export const TRANSPARENT = new Set(["air", "water", "torch"]);
+/** Cells the neighbours can be seen through: air, water, and the blocks drawn smaller than a cube. */
+export const TRANSPARENT = new Set(["air", "water", "torch", "berry bush", "sprout", "wheat", "chest", "bed"]);
+
+/** Detail colours for the blocks drawn with more than one colour (see terrain.ts). */
+export const DETAIL = {
+  berry: 0xe23a5a,
+  bushTop: 0x52b06c,
+  wheatStalk: 0xd9b84e,
+  wheatHead: 0xf2cf5c,
+  sproutLeaf: 0x8fd86b,
+  benchGrid: 0x7a4f28,
+  benchLeg: 0x7f532c,
+  furnaceMouth: 0x2b2733,
+  furnaceFire: 0xff8a33,
+  chestLid: 0xc99556,
+  chestBand: 0x6e4524,
+  chestLatch: 0xffd56a,
+  bedFrame: 0x8a5a32,
+  bedPillow: 0xfbf6ee,
+  ironShine: 0xf6c9a0,
+};
 
 // Face shade by direction: +y, -y, +x, -x, +z, -z
 export const FACE_SHADE = [1.0, 0.55, 0.86, 0.8, 0.9, 0.76];

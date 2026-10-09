@@ -26,7 +26,24 @@ class Vitals(_M):
     fall_safe: int = 3
 
 
+class VariedTerrain(_M):
+    """Settings used only by terrain.style: varied (see sim/terrain_varied.py)."""
+    mountains: int = 6                 # the first is a small hill near the middle; the rest are peaks,
+                                       # ridges, mesas, craters or clusters of hills
+    mountain_height: float = 18.0
+    lakes: int = 5                     # the first is a short walk from the middle
+    rivers: int = 3                    # each runs from a lake or a mountain foot out to the sea
+    river_width: float = 2.0
+    islands: int = 3
+    coast_noise: float = 7.0           # how far bays and capes push the coast in and out, in cells
+    dry_below: float = 0.22            # low ground where the moisture field is below this is sandy scrub
+    center_clear: int = 10             # open plains around the middle; mountains and lakes stay out
+    spawn_reach: int = 16              # min_trees and min_bushes are made sure of within this of the start
+
+
 class Terrain(_M):
+    style: Literal["classic", "varied"] = "classic"    # varied: bigger mixed landscape, see VariedTerrain
+    varied: VariedTerrain = VariedTerrain()
     base_height: float = 15.2
     noise_scales: list[int] = [16, 8, 4]
     noise_amps: list[float] = [5.0, 2.5, 1.2]
@@ -34,6 +51,9 @@ class Terrain(_M):
     edge_depth: int = 7
     hill_height: float = 9.0
     hill_radius: float = 7.0
+    hill_place: Literal["random", "corner"] = "random"   # corner: the stone hill sits in a corner of the land
+    ore_radius: int = 0                # >0: coal and iron ore only within this many cells (sideways) of the hill
+    ore_boost: float = 2.0             # with ore_radius, ore rates inside it are multiplied by this
     stone_line: int = 19
     lake_radius: float = 4.5
     lake_depth: int = 3
@@ -50,7 +70,11 @@ class Terrain(_M):
 
 
 class Farming(_M):
-    seed_chance: float = 0.25          # chance that mining grass also gives 1 seeds
+    seed_chance: float = 0.5           # chance that mining grass also gives 1 seeds
+    wild_patches: int = 3              # patches of ripe wheat by water on a new map
+    wild_per_patch: int = 4            # plants per patch, at most
+    zombies_trample: bool = False      # a chasing zombie that steps onto a sprout or wheat crushes it (or breaks one blocking it)
+    animal_eat_prob: float = 0.0       # chance per step that a sheep or chicken beside a crop eats it
     water_dist: int = 4                # seeds need water within this many cells sideways, level with the soil or up to 2 below; 0 = no need
     grow_steps: int = 300              # world steps for a sprout to turn into wheat; steps in rain count double
     wheat_per_crop: int = 2
@@ -72,7 +96,7 @@ class Creatures(_M):
     sheep_start: int = 6
     chicken_start: int = 6
     passive_max: int = 8
-    passive_respawn: int = 2
+    passive_respawn: float = 2         # per kind each morning; a fraction is a chance (0.5 = about every other day)
     passive_move_prob: float = 0.25
     animal_count_mult: float = 1.0        # scales sheep+chicken start counts, max, and respawn
     health: dict[str, int] = {"sheep": 6, "chicken": 4, "zombie": 10}
@@ -129,6 +153,7 @@ class WorldConfig(_M):
     armor: dict[str, int] = {"iron helmet": 1, "iron chestplate": 2}   # zombie damage taken off per piece held
     sleep_zombie_dist: int = 8         # no sleep with a zombie this close
     sleep_heal_every: int = 5          # asleep with food above 0: 1 health every this many steps
+    start_items: dict[str, int] = {"seeds": 0, "bread": 0}   # every agent starts with these (not given again on respawn)
     hear_radius: int = 16              # multi-agent: "say" reaches agents this close
     say_max_chars: int = 200           # longer speech is cut
     pvp_loot: bool = False             # multi-agent: a killer gets what fits of the victim's inventory

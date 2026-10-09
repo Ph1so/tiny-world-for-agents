@@ -6,6 +6,7 @@ import { actionVerb } from "./scene/action";
 import { SceneView, type CameraMode } from "./scene/view";
 import { el } from "./ui/dom";
 import { AgentPanel, EventFeed, MemoryPanel, StatusPanel, type NameOpts } from "./ui/panels";
+import { StatsPanel } from "./ui/stats";
 import { Timeline } from "./ui/timeline";
 import { Recorder } from "./ui/controls";
 
@@ -20,6 +21,7 @@ export class RunView {
   memory = new MemoryPanel();
   longterm = new MemoryPanel("longterm");
   timeline = new Timeline();
+  stats = new StatsPanel();
   events = new EventFeed();
   recorder: Recorder;
   private overlay = el("div", { class: "overlay", text: "loading…" });
@@ -37,12 +39,13 @@ export class RunView {
     this.run = new RunData(runId);
     this.chip.append(this.chipText, el("div", { class: "bar" }, this.chipBar));
     this.stage.append(this.canvas, this.chip, this.overlay, this.debug);
-    const side = el("div", { class: "side" }, this.status.root, this.agent.root, this.longterm.root, this.memory.root, this.timeline.root, this.events.root);
+    const side = el("div", { class: "side" }, this.status.root, this.stats.root, this.agent.root, this.longterm.root, this.memory.root, this.timeline.root, this.events.root);
     this.root.append(this.stage, side);
     this.scene = new SceneView(this.canvas, this.run);
     this.recorder = new Recorder(this.canvas, runId);
     this.events.onJump = (t) => { player.seek(t); player.live = false; };
     this.timeline.onSeekAgentStep = (i) => { player.seek(this.run.tOfAgentStep(i)); player.live = false; };
+    this.status.onSelectAgent = (id) => this.run.selectAgent(id);
     this.run.onReady = () => { this.scene.init(); this.overlay.style.display = "none"; };
   }
 
@@ -78,6 +81,7 @@ export class RunView {
     this.updateChip(t);
     const t1 = showDebug ? performance.now() : 0;
     this.status.update(this.run, t, this.names, this.live ? this.statusText : "");
+    this.stats.update(this.run, t, this.names);
     this.agent.update(this.run, t, this.names);
     this.memory.update(this.run, t);
     this.longterm.update(this.run, t);

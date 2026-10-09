@@ -1,5 +1,7 @@
-# World settings. Every balance number lives here. Tuned in milestone 2.
-size: [64, 32, 64]          # x (east), y (up), z (south)
+# Varied world: configs/world.yaml with a 128 x 128 map and terrain.style varied (ragged coast,
+# islands, several lakes and rivers, mountains of different shapes, biomes and tree shapes).
+# Keep the other settings in step with configs/world.yaml.
+size: [128, 48, 128]        # x (east), y (up), z (south)
 sea_level: 12
 names: familiar             # familiar | alien
 shuffle_recipes: false
@@ -104,6 +106,12 @@ weather:
   hail_damage: 1
 
 terrain:
+  style: varied             # see VariedTerrain in sim/config.py for the defaults
+  varied:
+    mountains: 6
+    lakes: 5
+    rivers: 3
+    islands: 3
   base_height: 15.2
   noise_scales: [16, 8, 4]
   noise_amps: [5.0, 2.5, 1.2]
@@ -134,7 +142,7 @@ creatures:
   passive_max: 8            # per kind
   passive_respawn: 2        # per kind, each morning
   passive_move_prob: 0.25
-  animal_count_mult: 1.0    # scales sheep+chicken start, max, and respawn
+  animal_count_mult: 2.0    # scales sheep+chicken start, max, and respawn
   health: {sheep: 6, chicken: 4, zombie: 10}
   meat: {sheep: 2, chicken: 1, zombie: 0}
   wool: {sheep: 1}        # wool from a sheep kill

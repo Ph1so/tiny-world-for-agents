@@ -8,6 +8,10 @@ import { AgentModel, type PoseKind } from "./agent";
 
 /** Shirt tints, multiplied into the model's colours. */
 const TINTS = [0xff9a9a, 0x9affc0, 0xffe08a, 0xc9a6ff, 0x8ad8ff, 0xffb3e6, 0xd2ff8a];
+
+/** An agent's body tint by its place in the run's agent list. The first keeps the plain colours,
+ *  so every agent looks the same whichever one the viewer follows. */
+export function agentTint(k: number): number { return k <= 0 ? 0xffffff : TINTS[(k - 1) % TINTS.length]; }
 /** World steps a bubble stays up after the words were said. */
 const BUBBLE_STEPS = 14;
 
@@ -87,7 +91,7 @@ export class OthersLayer {
     let o = this.others.get(e.id);
     if (o) return o;
     const model = new AgentModel(this.material);
-    const tint = TINTS[k % TINTS.length];
+    const tint = agentTint(k);
     model.group.traverse((m) => {
       const mesh = m as THREE.Mesh;
       const mat = mesh.material as THREE.MeshLambertMaterial | undefined;
@@ -108,7 +112,7 @@ export class OthersLayer {
     const seen = new Set<number>();
     list.forEach((e, k) => {
       if (e.id === run.primaryAgent) return;
-      const o = this.ensure(e, k - 1);
+      const o = this.ensure(e, k);
       seen.add(e.id);
       o.model.group.visible = o.tag.visible = e.alive;
       if (!e.alive) return;

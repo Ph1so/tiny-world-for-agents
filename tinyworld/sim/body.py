@@ -12,7 +12,7 @@ from collections import deque
 BODY_FIELDS = (
     "pos", "spawn", "inv", "tools", "health", "food", "air", "bed",
     "_food_tick", "_starve_tick", "_heal_tick", "_hail_tick", "_vitals_log", "_last_hit",
-    "made", "firsts", "deaths", "stuck",
+    "made", "placed", "firsts", "deaths", "stuck",
     "last_action", "last_result", "_notice", "_notice_shown", "_death_notice",
     "_hits", "_hurt", "_died", "_cause", "_asleep",
 )
@@ -33,6 +33,7 @@ class Body:
         self._vitals_log: deque = deque()
         self._last_hit = -10**9
         self.made: dict = {}
+        self.placed: list[list] = []     # [block, [x, y, z]] for structures and crops it placed; kept through death
         self.firsts: dict[str, list[str]] = {"mine": [], "craft": [], "place": [], "eat": []}
         self.deaths = 0
         self.stuck = False

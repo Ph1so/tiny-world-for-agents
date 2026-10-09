@@ -20,7 +20,9 @@ export function namer(run: RunData, opts: NameOpts): (n: string) => string {
 
 export class StatusPanel {
   root = el("div", { class: "panel status" });
-  private lastT = -1;
+  private lastT = "";
+  /** Multi-agent: called with an agent's id when its name in the roster is clicked. */
+  onSelectAgent: ((id: number) => void) | null = null;
   private title = el("div", { class: "run-title" });
   private clock = el("div", { class: "clock" });
   private bars = el("div", { class: "bars" });
@@ -53,13 +55,17 @@ export class StatusPanel {
     this.title.textContent = `${m.runId}  ·  ${m.controller}${m.model ? " · " + m.model : ""}${m.memoryChars ? ` · memory ${m.memoryChars}` : ""}${m.names === "alien" ? " · alien" : ""}`;
     const inDay = t % m.dayLength;
     this.clock.textContent = `day ${s.day}  ·  step ${t} / ${run.maxT}  ·  ${inDay}/${m.dayLength} ${s.light}${s.weather && s.weather !== "clear" ? "  ·  " + (s.weather === "storm" ? "⛈ storm" : "🌧 rain") : ""}  ·  agent step ${s.i}${status ? "  ·  " + status : ""}`;
-    if (t === this.lastT) return;
-    this.lastT = t;
+    const tKey = `${t}:${run.agentGen}`;
+    if (tKey === this.lastT) return;
+    this.lastT = tKey;
     clear(this.roster);
     for (const g of s.agents ?? []) {
       const me = g.id === run.primaryAgent;
-      this.roster.append(el("div", { class: `roster-row${me ? " me" : ""}${g.alive ? "" : " gone"}`,
-        text: `${me ? "▶ " : ""}${g.name ?? "agent"} #${g.id}  ♥${g.health} 🍗${g.food}${g.alive ? "" : "  ✝"}` }));
+      const row = el("button", { type: "button", class: `roster-row${me ? " me" : ""}${g.alive ? "" : " gone"}`,
+        title: me ? "the agent the panels and cameras follow" : "follow this agent",
+        text: `${me ? "▶ " : ""}${g.name ?? "agent"} #${g.id}  ♥${g.health} 🍗${g.food}${g.alive ? "" : "  ✝"}` });
+      row.addEventListener("click", () => this.onSelectAgent?.(g.id));
+      this.roster.append(row);
     }
     const a = s.agent;
     const max = { health: 20, food: 20, air: 10 };
@@ -121,6 +127,7 @@ export class AgentPanel {
   root = el("div", { class: "panel agent" });
   private lastI = -1;
   private lastAlien = false;
+  private lastGen = 0;
   private head = el("div", { class: "panel-head", text: "agent" });
   private thought = el("div", { class: "thought" });
   private action = el("div", { class: "action" });
@@ -173,8 +180,8 @@ export class AgentPanel {
     const i = run.agentStepIndexAt(t);
     const rec = run.stepRecord(i);
     const key = rec ? i : -2 - i;      // a step that has not arrived yet must be redrawn when it does
-    if (key === this.lastI && opts.alien === this.lastAlien) return;
-    this.lastI = key; this.lastAlien = opts.alien;
+    if (key === this.lastI && opts.alien === this.lastAlien && run.agentGen === this.lastGen) return;
+    this.lastI = key; this.lastAlien = opts.alien; this.lastGen = run.agentGen;
     const rename = namer(run, opts);
     this.head.textContent = `agent step ${i}${rec ? `  (world ${rec.t_start} → ${rec.t_end})` : ""}`;
     if (!rec) {
@@ -233,7 +240,7 @@ export class MemoryPanel {
     // At the very end of a finished run, show the long-term file after the reflection too.
     const i = lt && run.finished && t >= run.maxT ? Number.MAX_SAFE_INTEGER : run.agentStepIndexAt(t);
     const k = run.memoryIndexAt(i, lines);
-    const key = `${i}:${k}:${lines.length}`;
+    const key = `${i}:${k}:${lines.length}:${run.agentGen}`;
     if (key === this.lastKey) return;
     this.lastKey = key;
     const limit = k >= 0 ? lines[k].limit : lt ? run.meta.longtermChars : run.meta.memoryChars;

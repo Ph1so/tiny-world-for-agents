@@ -78,3 +78,26 @@ def test_recipe_book_reaches_multi_agent_prompts(tmp_path):
               world_cfg=load_world_config(recipe_book=True))
     p = json.loads((tmp_path / "book" / "prompts.json").read_text())
     assert "Everything that can be made with craft:" in next(iter(p["system"].values()))
+
+
+def test_a_finished_run_can_be_extended_exactly(tmp_path, capsys):
+    run_multi("ext", AGENTS, seed=2, max_steps=150, runs_dir=tmp_path, clock="lockstep")
+    d = tmp_path / "ext"
+    before = rows(d, "steps")
+    assert (d / "inflight.json").exists()
+    w = run_multi("ext", max_steps=300, runs_dir=tmp_path, resume=True)
+    assert "differs" not in capsys.readouterr().out             # the rebuilt world matched the log
+    after = [s for s in rows(d, "steps") if s["t_obs"] >= 150]
+    assert after and all("You died" not in s["observation"] or s["t_obs"] > 151 for s in after[:3])
+    world = rows(d, "world")
+    assert [r["t"] for r in world[1:]] == list(range(1, w.t + 1)) and w.t >= 300
+    steps = rows(d, "steps")
+    assert steps[:len(before)] == before
+    for aid in {s["agent"] for s in steps}:
+        mine = [s for s in steps if s["agent"] == aid]
+        assert [s["i"] for s in mine] == list(range(1, len(mine) + 1))
+        assert mine[-1]["t_end"] > 250                          # every agent kept acting after the seam
+        assert all(b["t_start"] == a["t_end"] for a, b in zip(mine, mine[1:]))   # lockstep, no gap at the seam
+    cfg = yaml.safe_load((d / "config.yaml").read_text())
+    assert cfg["max_steps"] == 300 and cfg["extended"][0]["from"] == 150
+    assert json.loads((d / "summary.json").read_text())["world_steps"] == w.t

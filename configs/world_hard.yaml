@@ -79,9 +79,14 @@ sleep_heal_every: 5         # asleep with food above 0: 1 health every this many
 hear_radius: 16             # multi-agent: "say" reaches agents this close
 say_max_chars: 200          # longer speech is cut
 pvp_loot: false             # multi-agent: a killer gets what fits of the victim's inventory
+start_items: {seeds: 0, bread: 0}   # every agent starts with these (not given again on respawn)
 
 farming:
-  seed_chance: 0.25         # chance that mining grass also gives 1 seeds
+  seed_chance: 0.5          # chance that mining grass also gives 1 seeds
+  wild_patches: 3           # patches of ripe wheat by water on a new map
+  wild_per_patch: 4         # plants per patch, at most
+  zombies_trample: false    # a chasing zombie that steps onto a sprout or wheat crushes it
+  animal_eat_prob: 0.0      # chance per step that a sheep or chicken beside a crop eats it
   water_dist: 4             # seeds need water within this many cells sideways, level with the soil or up to 2 below; 0 = no need
   grow_steps: 300           # steps for a sprout to turn into wheat; steps in rain count double
   wheat_per_crop: 2
@@ -105,6 +110,9 @@ terrain:
   edge_depth: 7
   hill_height: 9.0
   hill_radius: 7.0
+  hill_place: random        # random | corner (the stone hill sits in a corner of the land)
+  ore_radius: 0             # >0: coal and iron ore only within this many cells of the hill
+  ore_boost: 2.0            # with ore_radius, ore rates inside it are multiplied by this
   stone_line: 19
   lake_radius: 4.5
   lake_depth: 3

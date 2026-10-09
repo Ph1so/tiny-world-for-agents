@@ -110,7 +110,7 @@ class AgentRow {
       this.model.append(el("option", { value: m.name, text: m.name + price }));
     }
     if (opts.models.some((m) => m.name === "haiku")) this.model.value = "haiku";
-    this.memory = el("input", { type: "number", min: "0", max: "20000", step: "100", value: "2000", title: "memory file size in characters; 0 turns it off" }) as HTMLInputElement;
+    this.memory = el("input", { type: "number", min: "0", max: "20000", step: "100", value: "4000", title: "memory file size in characters; 0 turns it off" }) as HTMLInputElement;
     this.persona = el("textarea", { rows: "2", maxlength: "1500",
       placeholder: "optional: a paragraph added to the end of this agent's instructions, e.g. a personality or a role" }) as HTMLTextAreaElement;
     this.personaBox = el("div", { class: "persona" }, this.persona);

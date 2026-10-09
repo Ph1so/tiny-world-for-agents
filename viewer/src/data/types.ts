@@ -67,8 +67,9 @@ export interface WorldStepLine {
 export type WorldLine = SnapshotLine | WorldStepLine;
 
 export interface StepLine {
-  /** Multi-agent runs: whose step this is. */
+  /** Multi-agent runs: whose step this is, and the world step its observation was taken at. */
   agent?: number;
+  t_obs?: number;
   i: number;
   t_start: number;
   t_end: number;

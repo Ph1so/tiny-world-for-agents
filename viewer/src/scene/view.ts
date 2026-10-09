@@ -8,7 +8,7 @@ import type { Vec3 } from "../data/types";
 import { actionAt, resultFloat, type ActionNow } from "./action";
 import type { PoseKind } from "./agent";
 import { Creatures } from "./creatures";
-import { OthersLayer } from "./others";
+import { OthersLayer, agentTint } from "./others";
 import { Effects } from "./fx";
 import { BLOCK_COLORS } from "./palette";
 import { swatch } from "../ui/panels";
@@ -50,11 +50,13 @@ export class SceneView {
   private agentPos = new THREE.Vector3();
   private agentPrev = new THREE.Vector3();
   private agentYaw = 0;
+  private agentGen = 0;
   private povYaw = 0;
   private bodyYaw = 0;
   private povLook = new THREE.Vector3();
   private moving = 0;
   private followTilt = 0;
+  private mapScale = 1;
   fx = new Effects();
   /** The action on screen this frame, for the panels. */
   act: ActionNow | null = null;
@@ -115,6 +117,13 @@ export class SceneView {
     this.sky = new Sky(run.size);
     this.scene.add(this.sky.group);
     this.scene.fog = this.sky.fog;
+    // Fog and zoom-out distance were tuned on 64 x 64 maps; bigger maps push both out.
+    this.mapScale = Math.max(1, Math.max(sx, sz) / 64);
+    this.controls.maxDistance = 220 * this.mapScale;
+    this.persp.far = 600 * this.mapScale;
+    this.persp.updateProjectionMatrix();
+    this.sky.fog.near = 90 * this.mapScale;
+    this.sky.fog.far = 260 * this.mapScale;
     if (this.mode === "pov") this.setMode("pov");
     this.sky.setTorches(this.terrain.torches.values());
     this.terrain.torchesChanged = false;
@@ -145,8 +154,8 @@ export class SceneView {
     this.povLook.set(this.agentPos.x + 0.5 - Math.sin(this.povYaw), this.agentPos.y + 1.1, this.agentPos.z + 0.5 - Math.cos(this.povYaw));
     if (this.sky) {
       const r = this.run.meta.viewRadius;
-      this.sky.fog.near = pov ? r * 0.5 : 90;
-      this.sky.fog.far = pov ? r + 1 : 260;
+      this.sky.fog.near = pov ? r * 0.5 : 90 * this.mapScale;
+      this.sky.fog.far = pov ? r + 1 : 260 * this.mapScale;
     }
     if (!pov && this.initialised) {
       // Leave POV with the orbit camera looking at the agent again.
@@ -194,6 +203,10 @@ export class SceneView {
     }
     const a = run.stateAt(t0), b = run.stateAt(t1) ?? a;
     if (a && b) this.placeActors(a, b, f, time, dt);
+    if (a?.agents && run.agentGen !== this.agentGen) {
+      this.agentGen = run.agentGen;
+      this.creatures.tintAgent(agentTint(a.agents.findIndex((g) => g.id === run.primaryAgent)));
+    }
     if (a && b && a.agents) this.others.update(run, a, b, f, time, dt, this.agentPos);
     this.animate(a, time, dt);
     if (this.sky && a) {

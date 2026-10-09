@@ -19,7 +19,7 @@ def play(bot, seed: int, steps: int, **overrides):
 
 @pytest.fixture(scope="module")
 def sensible_runs():
-    return {seed: play(SensibleBot(seed), seed, 2100) for seed in range(1, 21)}   # bread needs a crop to ripen
+    return {seed: play(SensibleBot(seed), seed, 2400) for seed in range(1, 21)}   # bread needs a crop to ripen
 
 
 def test_random_bot_usually_dies_within_two_days():
@@ -47,13 +47,13 @@ def test_sensible_bot_only_sends_valid_actions():
 def test_every_recipe_is_reachable_in_play(sensible_runs, seed):
     """The sensible bot starts with nothing and ends up having made all 19 things."""
     w, _ = sensible_runs[seed]
-    assert sorted(w.firsts["craft"]) == sorted(r.output for r in BASE)
+    assert sorted(w.firsts["craft"]) == sorted({r.output for r in BASE})
 
 
 @pytest.mark.parametrize("seed", [1, 2, 3, 4, 5])
 def test_alien_shuffled_world_is_playable(seed):
     w, deaths = play(SensibleBot(seed), seed, 2400, names="alien", shuffle_recipes=True)   # seed 3 needs past 2100 with farming (110)
-    assert sorted(w.firsts["craft"]) == sorted(r.output for r in BASE)
+    assert sorted(w.firsts["craft"]) == sorted({r.output for r in BASE})
 
 
 def test_end_run_stops_the_world():

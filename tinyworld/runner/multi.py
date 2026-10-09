@@ -41,6 +41,7 @@ from tinyworld.sim.engine import Engine
 from .run import PAUSE_FILE, PID_FILE, STEP_DEFAULTS, STOP_FILE, git_commit, make_bot, resolve_world_path, write_prompts
 
 FILES = ["world", "steps", "memory", "events"]
+INFLIGHT_FILE = "inflight.json"      # actions under way when the run ended, for resuming exactly
 
 
 class WorldView:
@@ -107,18 +108,34 @@ def _make_controller(spec: dict, seed: int, aid: int, world_cfg: WorldConfig, cl
         intro=INTRO_REALTIME if clock == "realtime" else INTRO_LOCKSTEP, persona=spec.get("persona"))
 
 
-def run_multi(run_id: str, agents: list[dict], seed: int = 1, max_steps: int = 1200,
+def run_multi(run_id: str, agents: list[dict] | None = None, seed: int = 1, max_steps: int = 1200,
               world_cfg: WorldConfig | None = None, runs_dir: str | Path = "runs", clock: str = "realtime",
-              tick_ms: int = 1000, clients: dict | None = None) -> World:
+              tick_ms: int = 1000, clients: dict | None = None, resume: bool = False) -> World:
     """agents: one dict per agent: name, controller (llm | sensible_bot | random_bot), and for llm
     model, memory_chars, history_window, max_tokens, persona. clients maps an agent's index to a
-    ready LLM client (tests)."""
+    ready LLM client (tests).
+
+    resume=True continues an existing run folder up to max_steps (a stopped run, or a finished
+    one being extended): agents, seed, clock and world come from its config.yaml, the world is
+    rebuilt by applying every logged action at the world step it started on (the world is
+    deterministic given those), the actions still under way when it ended (inflight.json) are put
+    back, each agent's memory file, recent history and costs are restored, and the files are
+    appended to."""
+    run_dir = Path(runs_dir) / run_id
+    old_cfg: dict = {}
+    if resume:
+        old_cfg = yaml.safe_load((run_dir / "config.yaml").read_text())
+        agents = [{k: v for k, v in a.items() if k in ("name", "controller", "model", "memory_chars", "history_window",
+                                                         "max_tokens", "persona", "memory_plain", "models_file")}
+                  for a in old_cfg["agents"]]
+        seed, clock, tick_ms = old_cfg["seed"], old_cfg.get("clock", "realtime"), old_cfg.get("tick_ms", 1000)
+        world_cfg = WorldConfig.model_validate(old_cfg["world"])
+        (run_dir / "summary.json").unlink(missing_ok=True)
     if clock not in ("realtime", "lockstep"):
         raise ValueError("clock must be realtime or lockstep")
     world_cfg = world_cfg or load_world_config()
-    run_dir = Path(runs_dir) / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
-    fh = {n: open(run_dir / f"{n}.jsonl", "w") for n in FILES}
+    fh = {n: open(run_dir / f"{n}.jsonl", "a" if resume else "w") for n in FILES}
 
     def write(name: str, row: dict) -> None:
         fh[name].write(json.dumps(row) + "\n")
@@ -139,6 +156,9 @@ def run_multi(run_id: str, agents: list[dict], seed: int = 1, max_steps: int = 1
         if kinds[aid] == "llm":
             thinkers[aid] = _Thinker(aid, c, views[aid], replies)
 
+    if resume:
+        if [a["id"] for a in old_cfg["agents"]] != list(ctl):
+            raise RuntimeError(f"agent ids {list(ctl)} do not match the run's {[a['id'] for a in old_cfg['agents']]}")
     config = {"run_id": run_id, "mode": "multi", "seed": seed, "clock": clock, "tick_ms": tick_ms,
               "max_steps": max_steps, "names": world_cfg.names, "on_death": world_cfg.on_death,
               "git_commit": git_commit(), "agents": []}
@@ -148,22 +168,29 @@ def run_multi(run_id: str, agents: list[dict], seed: int = 1, max_steps: int = 1
             entry.update(c.config_extras())
         config["agents"].append(entry)
     config["world"] = world_cfg.model_dump(mode="json")
+    if resume:
+        config = {**old_cfg, "max_steps": max_steps,
+                  "extended": old_cfg.get("extended", []) + [{"from": old_cfg["max_steps"], "to": max_steps,
+                                                              "git_commit": git_commit()}]}
     (run_dir / "config.yaml").write_text(yaml.safe_dump(config, sort_keys=False))
     llms = {aid: c for aid, c in ctl.items() if hasattr(c, "system_prompt")}
-    if llms:
+    if llms and not resume:
         system = {}
         for aid, c in llms.items():
             world.me = world.body(aid)
             system[str(aid)] = c.system_prompt(world)
         write_prompts(run_dir, system, next(iter(llms.values())))
-    write("world", world.snapshot())
-    for aid, c in ctl.items():
-        write("memory", {"agent": aid, "i": 0, "t": 0, "ops": [], "accepted": True, "over_by": 0, "text": "",
-                         "chars": 0, "limit": int(getattr(c, "memory_limit", 0) or 0)})
+    if not resume:
+        write("world", world.snapshot())
+        for aid, c in ctl.items():
+            write("memory", {"agent": aid, "i": 0, "t": 0, "ops": [], "accepted": True, "over_by": 0, "text": "",
+                             "chars": 0, "limit": int(getattr(c, "memory_limit", 0) or 0)})
 
     i_of = {aid: 0 for aid in ctl}                    # agent steps so far, per agent
     first = next(iter(ctl))
     pending: dict[int, tuple] = {}                    # aid -> (obs, t_obs, controller output, think seconds)
+    if resume:
+        _replay(run_dir, world, eng, ctl, i_of, pending)
     thinking: set[int] = set()
     started = time.monotonic()
     for name in (PAUSE_FILE, STOP_FILE):
@@ -192,7 +219,8 @@ def run_multi(run_id: str, agents: list[dict], seed: int = 1, max_steps: int = 1
     try:
         with lock:
             for aid in eng.alive():
-                give_turn(aid)
+                if aid not in pending:                # a resumed in-flight action is still running
+                    give_turn(aid)
         deadline = time.monotonic()
         while world.t < max_steps and not world.done:
             if (run_dir / STOP_FILE).exists():
@@ -256,6 +284,14 @@ def run_multi(run_id: str, agents: list[dict], seed: int = 1, max_steps: int = 1
                 deadline += tick_ms / 1000
                 time.sleep(max(0.0, deadline - time.monotonic()))
     finally:
+        # Actions still under way, so a later resume can finish and log them exactly.
+        inflight = {}
+        for aid, (obs, t_obs, out, secs) in pending.items():
+            slot = eng.slots[aid]
+            if slot.activity is not None or slot.inbox is not None:
+                inflight[str(aid)] = {"obs": obs, "t_obs": t_obs, "out": out, "secs": secs,
+                                      "t_start": slot.t0 if slot.activity is not None else world.t}
+        (run_dir / INFLIGHT_FILE).write_text(json.dumps({"t": world.t, "agents": inflight}))
         for t in thinkers.values():
             t.inbox.put(None)
         for f in fh.values():
@@ -265,6 +301,74 @@ def run_multi(run_id: str, agents: list[dict], seed: int = 1, max_steps: int = 1
     if not stopped:
         _write_summary(run_dir, world, ctl, i_of, time.monotonic() - started)
     return world
+
+
+def _replay(run_dir: Path, world: World, eng: Engine, ctl: dict, i_of: dict, pending: dict) -> None:
+    """Rebuild a run's world and its agents' state from its logs (see run_multi resume)."""
+    from tinyworld.agent.prompt import describe_action
+    steps = [json.loads(l) for l in (run_dir / "steps.jsonl").read_text().splitlines() if l]
+    mems = [json.loads(l) for l in (run_dir / "memory.jsonl").read_text().splitlines() if l]
+    last_world = None
+    with open(run_dir / "world.jsonl") as f:
+        for line in f:
+            if line.strip():
+                last_world = line
+    end_t = json.loads(last_world)["t"]
+    flight = {}
+    if (run_dir / INFLIGHT_FILE).exists():
+        data = json.loads((run_dir / INFLIGHT_FILE).read_text())
+        if data.get("t") == end_t:
+            flight = {int(k): v for k, v in data["agents"].items()}
+    starts: dict[int, list] = {}
+    for s in steps:
+        starts.setdefault(s["t_start"], []).append((s["agent"], s["action"]))
+    for aid, v in flight.items():
+        starts.setdefault(v["t_start"], []).append((aid, v["out"]["action"]))
+    deltas: list = []
+    while world.t < end_t:
+        for aid, action in starts.get(world.t, []):
+            eng.submit(aid, action)
+        _, deltas, _ = eng.tick()
+    for aid, action in starts.get(end_t, []):           # submitted at the very end, not started yet
+        eng.submit(aid, action)
+    # Death notices and heard lines are cleared when an agent looks; the replay never looks, so
+    # drop the ones it piled up (the agents saw them at the time).
+    for b in world.bodies:
+        b._death_notice, b.heard, b._notice, b._notice_shown = None, [], None, False
+    # The rebuilt world should be the logged one. (Compared line to line: a world line is taken
+    # inside the step, before running actions resume, so agents mid-walk are one cell behind.)
+    logged = {a["id"]: a for a in json.loads(last_world).get("agents", [])}
+    rebuilt = {a["id"]: a for a in (deltas[-1].get("agents", []) if deltas else [])}
+    off = [rebuilt[i]["name"] for i in logged if i in rebuilt and any(
+        rebuilt[i][k] != logged[i][k] for k in ("pos", "inventory", "health", "food"))]
+    if off:
+        print(f"resume: rebuilt state differs from the log for {off} (actions under way at the end were not saved)")
+    for aid, c in ctl.items():
+        mine = [s for s in steps if s["agent"] == aid]
+        i_of[aid] = len(mine)
+        if not hasattr(c, "history"):
+            continue
+        c.history = [(describe_action(s["action"]), s["result"]) for s in mine]
+        c.i = len(mine) + (aid in flight)
+        c.deaths = sum(1 for s in mine if s.get("died"))
+        c.parse_fails = sum(1 for s in mine if not s.get("parse_ok", True))
+        c.total_cost_usd = sum(float(s.get("cost_usd") or 0) for s in mine)
+        c.total_input_tokens = sum(int(s.get("input_tokens") or 0) for s in mine)
+        c.total_output_tokens = sum(int(s.get("output_tokens") or 0) for s in mine)
+        mem = [m for m in mems if m.get("agent") == aid]
+        text = mem[-1]["text"] if mem else ""
+        if aid in flight:
+            out = flight[aid]["out"]
+            c.total_cost_usd += float(out.get("cost_usd") or 0)
+            if out.get("memory"):
+                text = out["memory"]["text"]
+            c._last_action = out["action"]
+        elif mine:
+            c._last_action = mine[-1]["action"]
+        if c.memory_on:
+            c.memory.set(text, c.i)
+    for aid, v in flight.items():
+        pending[aid] = (v["obs"], v["t_obs"], v["out"], v["secs"])
 
 
 def _write_summary(run_dir: Path, world: World, ctl: dict, i_of: dict, wall_s: float) -> None:
@@ -285,7 +389,7 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--agents", type=int, default=2, help="how many LLM agents, without --spec")
     ap.add_argument("--model", default="haiku")
     ap.add_argument("--bots", type=int, default=0, help="sensible bots added next to the LLM agents")
-    ap.add_argument("--memory-chars", type=int, default=2000)
+    ap.add_argument("--memory-chars", type=int, default=4000)
     ap.add_argument("--history-window", type=int, default=3)
     ap.add_argument("--seed", type=int, default=None)
     ap.add_argument("--max-steps", type=int, default=None)
@@ -294,7 +398,14 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--config", default=None, help="world yaml, default configs/world.yaml")
     ap.add_argument("--recipe-book", action="store_true", default=None, help="list every craft in the system prompt")
     ap.add_argument("--runs-dir", default="runs")
+    ap.add_argument("--resume", action="store_true", help="continue the run folder up to --max-steps")
     args = ap.parse_args(argv)
+    if args.resume:
+        if args.max_steps is None:
+            ap.error("--resume needs --max-steps (the new total)")
+        w = run_multi(args.run_id, max_steps=args.max_steps, runs_dir=args.runs_dir, resume=True)
+        print(f"{args.run_id}: world steps {w.t}, agents alive {[b.name for b in w.bodies if b.alive]}")
+        return
 
     spec = (yaml.safe_load(Path(args.spec).read_text()) if args.spec else None) or {}
     agents = spec.get("agents") or (

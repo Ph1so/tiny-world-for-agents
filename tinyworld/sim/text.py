@@ -4,7 +4,7 @@ Wording rule: say what happened. Never say why, and never say what to do. Except
 because a model could not tell why from what it saw (see DECISIONS.md): NOT_MOVED_DRY states the
 rule for moving up and down, and with rule_notes on, NOT_MADE_EXACT, NOT_MADE_STATION,
 OBS_NO_HEAL, NOT_PLANTED and OBS_WET_RULE say why a craft or planting failed, or why health is
-not rising or food is falling fast.
+not rising or food is falling fast, and DIED_CHEST_NOTE says what a death does not take.
 """
 
 MOVED = "Moved {n} {cells} {dir}."
@@ -68,6 +68,9 @@ DIED_RESPAWN = "You died. Cause: {cause}. You are back at the starting point. Yo
 DIED_RESPAWN_BED = ("You died. Cause: {cause}. You are back beside your {bed} at ({x}, {y}, {z}). "
                     "Your items are gone.")
 DIED_END = "You died. Cause: {cause}."
+DIED_CHEST_NOTE = " What is in a {chest} is not lost."
+DIED_BED_NOTE = " Sleeping at a {bed} makes you come back beside it."
+OBS_CLOSED = "you are in a closed space of {n} floor cells: no open path for creatures leads outside"
 
 OBS_HEADER = "step {t} | day {day} | light {light} | sky {sky}"
 OBS_WEATHER = " | weather {weather}"
@@ -87,6 +90,10 @@ OBS_VITALS = "health {h}/{hm} | food {f}/{fm} | air {a}/{am}"
 OBS_VITALS_BEFORE = "health {h}/{hm} ({h0} at step {t0}) | food {f}/{fm} ({f0} at step {t0}) | air {a}/{am}"
 OBS_NO_HEAL = "health does not rise while food is under {n}"
 OBS_MADE = "things you have made: {items}"
+OBS_PLACED = "things you have placed: {items}"
+OBS_PLACED_ONE = "{name} at {coords}"
+OBS_PLACED_CHEST = "{name} at ({x},{y},{z}) holds {items}"
+OBS_PLACED_MORE = " and {n} more"
 OBS_MADE_ONE = "{inputs} -> {output}"
 OBS_MADE_COUNT = "{c} {name}"
 OBS_INVENTORY = "inventory: {items}"
@@ -99,6 +106,21 @@ BOOK_HEADER = "Everything that can be made with craft:"
 BOOK_LINE = "{inputs} -> {output}{station}"
 BOOK_STATION = " (with a {station} within {r} cells)"
 BOOK_FUEL = "{c} {a} or {b}"
+BOOK_USE_HEADER = "What some things do:"
+BOOK_USE_BED = ("{bed}: sleep with a {bed} within {r} cells, from dusk to dawn; while it stands, after a death "
+                "you come back beside the {bed} you last slept at.")
+BOOK_USE_CHEST = ("{chest}: once placed it holds up to {n} slots of items (no tools), put in with store and taken out "
+                  "with take; what is in it stays when you die; a {chest} with items in it does not break.")
+BOOK_USE_DOOR = ("{door}: once placed it fills the cell above too if that is empty (two cells high); agents walk "
+                 "through it and creatures do not.")
+BOOK_USE_TORCH = "{torch}: no zombies appear within {r} cells of a placed {torch}; it lights cells within {l}."
+BOOK_USE_ROOF = ("rain and hail fall on you when no block above your head shuts out the sky ({leaves} do not); "
+                 "under a roof it is dark without a {torch} near.")
+BOOK_GROW_HEADER = "What grows:"
+BOOK_GROW = ("{seeds} placed with place in an empty cell on {soil}, with {water} within {r} cells sideways (level "
+             "with that block or up to 2 below), become a {sprout}. A {sprout} turns into {wheat} after {n} steps "
+             "(rain on it counts double). A {wheat} block is ripe: mining it gives {w} {wheat} and {s} or more "
+             "{seeds}. Mining a {sprout} gives its {seeds} back. Mining {grass} sometimes gives {seeds}.")
 OBS_USES = "{name} ({n} uses left)"
 OBS_USES_MANY = "{name} x{c} ({n} uses left)"
 OBS_COUNT = "{name} x{c}"

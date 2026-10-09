@@ -144,6 +144,14 @@ export class Creatures {
     }
   }
 
+  /** Tint the followed agent's body (see agentTint in others.ts). */
+  tintAgent(hex: number): void {
+    this.agent.traverse((m) => {
+      const mat = (m as THREE.Mesh).material as THREE.MeshLambertMaterial | undefined;
+      if (mat && mat.vertexColors && mat.color) mat.color.setHex(hex);
+    });
+  }
+
   setAgent(x: number, y: number, z: number, yaw: number, moving: number, time: number): void {
     const a = this.agent;
     a.position.set(x + 0.5, y + 0.02 + Math.abs(Math.sin(time * 9)) * 0.06 * moving, z + 0.5);
