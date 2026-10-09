@@ -38,7 +38,7 @@ from tinyworld.agent.prompt import INTRO_LOCKSTEP, INTRO_REALTIME
 from tinyworld.sim import World, WorldConfig, load_world_config
 from tinyworld.sim.engine import Engine
 
-from .run import PAUSE_FILE, PID_FILE, STEP_DEFAULTS, STOP_FILE, git_commit, make_bot, resolve_world_path
+from .run import PAUSE_FILE, PID_FILE, STEP_DEFAULTS, STOP_FILE, git_commit, make_bot, resolve_world_path, write_prompts
 
 FILES = ["world", "steps", "memory", "events"]
 
@@ -149,6 +149,13 @@ def run_multi(run_id: str, agents: list[dict], seed: int = 1, max_steps: int = 1
         config["agents"].append(entry)
     config["world"] = world_cfg.model_dump(mode="json")
     (run_dir / "config.yaml").write_text(yaml.safe_dump(config, sort_keys=False))
+    llms = {aid: c for aid, c in ctl.items() if hasattr(c, "system_prompt")}
+    if llms:
+        system = {}
+        for aid, c in llms.items():
+            world.me = world.body(aid)
+            system[str(aid)] = c.system_prompt(world)
+        write_prompts(run_dir, system, next(iter(llms.values())))
     write("world", world.snapshot())
     for aid, c in ctl.items():
         write("memory", {"agent": aid, "i": 0, "t": 0, "ops": [], "accepted": True, "over_by": 0, "text": "",
@@ -285,6 +292,7 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--clock", choices=["realtime", "lockstep"], default=None)
     ap.add_argument("--tick-ms", type=int, default=None)
     ap.add_argument("--config", default=None, help="world yaml, default configs/world.yaml")
+    ap.add_argument("--recipe-book", action="store_true", default=None, help="list every craft in the system prompt")
     ap.add_argument("--runs-dir", default="runs")
     args = ap.parse_args(argv)
 
@@ -294,7 +302,8 @@ def main(argv: list[str] | None = None) -> None:
           "history_window": args.history_window} for n in range(args.agents)]
         + [{"name": f"bot{n + 1}", "controller": "sensible_bot"} for n in range(args.bots)])
     pick = lambda flag, key, default: flag if flag is not None else spec.get(key, default)
-    cfg = load_world_config(resolve_world_path(args.config or spec.get("world")))
+    cfg = load_world_config(resolve_world_path(args.config or spec.get("world")),
+                            recipe_book=pick(args.recipe_book, "recipe_book", None))
     w = run_multi(args.run_id, agents, seed=pick(args.seed, "seed", 1), max_steps=pick(args.max_steps, "max_steps", 1200),
                   world_cfg=cfg, runs_dir=args.runs_dir, clock=pick(args.clock, "clock", "realtime"),
                   tick_ms=pick(args.tick_ms, "tick_ms", 1000))

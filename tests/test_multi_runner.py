@@ -39,6 +39,10 @@ def test_lockstep_run_logs_every_agent(tmp_path):
     assert all("agent" in e["detail"] for e in rows(d, "events") if e["type"] not in ("day_start", "night_start", "weather"))
     s = json.loads((d / "summary.json").read_text())
     assert s["world_steps"] == w.t >= 150 and len(s["agents"]) == 3
+    p = json.loads((d / "prompts.json").read_text())
+    assert set(p["system"]) == {str(ids[0]), str(ids[1])}          # the bot gets no prompt
+    assert p["system"][str(ids[0])].startswith("You are in a world. The world moves forward each time you and")
+    assert 'say: {"name": "say"' in p["system"][str(ids[0])] and p["history_window"] == 3
 
 
 def test_lockstep_bots_are_reproducible(tmp_path):
@@ -67,3 +71,10 @@ def test_stop_file_ends_without_summary(tmp_path):
     threading.Thread(target=stop_soon).start()
     w = run_multi("stopme", AGENTS[2:], seed=1, max_steps=10**6, runs_dir=tmp_path, clock="realtime", tick_ms=1)
     assert w.t < 10**6 and not (d / "summary.json").exists()
+
+
+def test_recipe_book_reaches_multi_agent_prompts(tmp_path):
+    run_multi("book", AGENTS[:1], seed=1, max_steps=5, runs_dir=tmp_path, clock="lockstep",
+              world_cfg=load_world_config(recipe_book=True))
+    p = json.loads((tmp_path / "book" / "prompts.json").read_text())
+    assert "Everything that can be made with craft:" in next(iter(p["system"].values()))

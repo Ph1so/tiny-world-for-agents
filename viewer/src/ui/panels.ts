@@ -1,6 +1,7 @@
 // Side panels: vitals and inventory, thought and action, observation, memory, event feed.
 // Each panel re-renders only when the step it shows changes.
 import type { RunData } from "../data/run";
+import type { StepLine } from "../data/types";
 import { EVENT_ICON, clear, el, fmtAction, fmtEvent } from "./dom";
 import { hasChanges, lineDiff } from "./diff";
 
@@ -126,9 +127,46 @@ export class AgentPanel {
   private result = el("div", { class: "result" });
   private obsHead = el("div", { class: "panel-head", text: "observation" });
   private obs = el("pre", { class: "observation" });
+  private getsHead = el("div", { class: "panel-head", text: "what the agent got this step" });
+  private gets = el("div", { class: "gets" });
 
   constructor() {
-    this.root.append(this.head, this.thought, this.action, this.result, this.obsHead, this.obs);
+    this.root.append(this.head, this.thought, this.action, this.result, this.getsHead, this.gets, this.obsHead, this.obs);
+  }
+
+  /** Everything the model was sent for step i: the system prompt (the same every step) and the
+   *  user message, rebuilt the way agent/prompt.py builds it (memory file, last K actions, then
+   *  the observation, which is shown in full below). */
+  private showGets(run: RunData, i: number, rec: StepLine): void {
+    clear(this.gets);
+    const p = run.prompts;
+    const sys = p?.system[String(run.primaryAgent ?? 0)];
+    if (!p || !sys) {
+      this.gets.append(el("div", { class: "muted", text: run.meta.controller.includes("bot") || !p
+        ? "no prompt: a bot reads the world directly (or this run predates prompts.json)" : "no prompt logged for this agent" }));
+      return;
+    }
+    const box = (title: string, body: string, open = false) => {
+      const d = el("details", { class: "gets-box" }, el("summary", { text: title }), el("pre", { class: "gets-text", text: body }));
+      (d as HTMLDetailsElement).open = open;
+      return d;
+    };
+    this.gets.append(box(`instructions · system prompt, same every step · ${sys.length} chars`, sys));
+    const lines: string[] = [];
+    if (p.memory_chars > 0) {
+      const k = run.memoryIndexAt(i - 1);
+      const mem = k >= 0 ? run.memory[k].text : "";
+      lines.push(`memory file (${mem.length} of ${p.memory_chars} characters used)`, mem, "");
+    }
+    const K = p.history_window;
+    const prev: StepLine[] = [];
+    for (let j = Math.max(1, i - K); j < i; j++) { const s = run.stepRecord(j); if (s) prev.push(s); }
+    lines.push(`last ${K} actions:`);
+    if (prev.length === 0 || K === 0) lines.push("none yet");
+    else prev.forEach((s) => lines.push(`${s.i}. ${pyJson(s.action)} -> ${s.result}`));
+    lines.push("", "observation:", "(shown below)");
+    const user = lines.join("\n");
+    this.gets.append(box(`this step's message · memory + last ${K} actions + observation · ${user.length - 13 + rec.observation.length} chars`, user, true));
   }
 
   update(run: RunData, t: number, opts: NameOpts): void {
@@ -152,7 +190,17 @@ export class AgentPanel {
     this.result.textContent = rec.result + (rec.died ? `  💀 died: ${rec.died}` : "");
     this.result.className = `result ${rec.died ? "bad" : ""}`;
     this.obs.textContent = rec.observation;
+    this.showGets(run, i, rec);
   }
+}
+
+/** json.dumps(x, separators=(", ", ": ")) as Python writes it (agent/prompt.py describe_action). */
+function pyJson(v: unknown): string {
+  if (v === null || v === undefined) return "null";
+  if (typeof v === "string") return JSON.stringify(v).replace(/[\u007f-\uffff]/g, (c) => "\\u" + c.charCodeAt(0).toString(16).padStart(4, "0"));
+  if (typeof v === "number" || typeof v === "boolean") return String(v);
+  if (Array.isArray(v)) return "[" + v.map(pyJson).join(", ") + "]";
+  return "{" + Object.entries(v as Record<string, unknown>).map(([k, x]) => `${pyJson(k)}: ${pyJson(x)}`).join(", ") + "}";
 }
 
 /** The memory file, or with kind "longterm" the long-term file of a lineage run. */

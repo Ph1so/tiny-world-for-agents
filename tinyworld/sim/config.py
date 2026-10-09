@@ -91,6 +91,8 @@ class Creatures(_M):
     zombie_breaks: list[str] = []         # block names a blocked zombie can break (empty = none)
     zombie_break_steps: int = 4           # steps spent adjacent to break one soft block
     torch_radius: int = 6                 # a torch this close suppresses zombie spawns
+    zombie_hits_per_decision: bool = True # multi-agent: zombies hit an agent at most once per action it
+                                          # starts, so the steps it spends thinking are not free hits
 
 
 class WorldConfig(_M):

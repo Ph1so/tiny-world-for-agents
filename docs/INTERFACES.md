@@ -221,3 +221,9 @@ events: `say` `{text, heard: [ids]}`, `give` `{to, items}`, `agent_error` `{erro
 with `kind: "agent"`. New actions: `say {"text"}`, `give {"id", "items"}`; `attack` takes an agent
 id. `summary.json` has `mode: multi`, `world_steps`, `wall_clock_s`, `cost_usd_total` and per agent
 `agent_steps`, `deaths`, `items_crafted`, `cost_usd`.
+
+### prompts.json
+Written at the start of any run with an LLM agent: `{"system": {id: text}, "history_window", "memory_chars"}`.
+`system` holds the exact system prompt each LLM agent was given (key `"0"` for a single-agent run,
+the agent id in a multi-agent run; bots have none). The viewer rebuilds each step's user message
+from it plus memory.jsonl and steps.jsonl. Runs from before this file have none.

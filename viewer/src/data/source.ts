@@ -40,10 +40,24 @@ export async function getRun(runId: string): Promise<RunListEntry> {
 
 export interface ModelOption { name: string; provider: string | null; model: string | null; input_per_m: number | null; output_per_m: number | null }
 export interface LineageOption { name: string; generations: number; chars: number; longterm_chars: number | null; busy: string | null }
-export interface Options { controls: boolean; models: ModelOption[]; worlds: string[]; lineages?: LineageOption[] }
+/** A world setting the new-run form can change (tinyworld/server/settings.py). */
+export interface SettingDef {
+  key: string; label: string; group: string; kind: "bool" | "int" | "float" | "choice";
+  min?: number; max?: number; step?: number; choices?: string[]; hint?: string;
+}
+export interface Options {
+  controls: boolean; models: ModelOption[]; worlds: string[]; lineages?: LineageOption[];
+  settings?: SettingDef[]; world_defaults?: Record<string, Record<string, unknown>>;
+}
+
+export interface AgentSpec { name: string; controller: string; model?: string; memory_chars?: number; persona?: string }
 
 export interface RunSpec {
-  controller: string;
+  agents?: AgentSpec[];
+  clock?: "realtime" | "lockstep";
+  tick_ms?: number;
+  settings?: Record<string, unknown>;
+  controller?: string;
   model?: string;
   memory_chars?: number;
   max_steps?: number;
@@ -82,6 +96,8 @@ export function controlRun(runId: string, action: "pause" | "resume" | "stop"): 
 async function fetchConfig(run: RunData): Promise<void> {
   const r = await fetch(`/api/runs/${encodeURIComponent(run.meta.runId)}/config.yaml`);
   if (r.ok) run.applyConfigYaml(await r.text());
+  const p = await fetch(`/api/runs/${encodeURIComponent(run.meta.runId)}/prompts.json`);
+  if (p.ok) run.prompts = await p.json();
 }
 
 /** Replay mode. Resolves when every file has been ingested. */

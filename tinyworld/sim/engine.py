@@ -111,6 +111,7 @@ class Engine:
         if b._notice_shown:
             b._notice, b._notice_shown = None, False
         s.action, s.inbox, s.t0 = s.inbox, None, w.t
+        b.decisions += 1
         s.activity = w.activity(s.action)
         self._advance(s)
 

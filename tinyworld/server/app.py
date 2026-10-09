@@ -35,7 +35,7 @@ from fastapi.staticfiles import StaticFiles
 from tinyworld.server.control import ControlError, RunControl
 
 JSONL_FILES = ["world", "steps", "memory", "events", "longterm"]   # longterm only for lineage runs
-SERVED_FILES = {"config.yaml", "summary.json"} | {f"{n}.jsonl" for n in JSONL_FILES}
+SERVED_FILES = {"config.yaml", "summary.json", "prompts.json"} | {f"{n}.jsonl" for n in JSONL_FILES}
 TAIL_INTERVAL_S = 0.25
 DEFAULT_VIEWER_DIST = Path(__file__).resolve().parents[2] / "viewer" / "dist"
 
@@ -180,8 +180,11 @@ def create_app(runs_dirs: list[Path] | None = None, viewer_dist: Path | None = N
 
     @app.get("/api/options")
     def options() -> dict:
-        return {"controls": controls, "models": control.models(), "worlds": control.worlds(),
-                "lineages": control.lineages()}
+        from .settings import SETTINGS, defaults
+        worlds = control.worlds()
+        return {"controls": controls, "models": control.models(), "worlds": worlds,
+                "lineages": control.lineages(), "settings": SETTINGS,
+                "world_defaults": {w: defaults(w) for w in worlds}}
 
     @app.post("/api/runs")
     def start_run(request: Request, spec: dict = Body(...)) -> dict:

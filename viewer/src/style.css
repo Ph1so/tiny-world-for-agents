@@ -163,3 +163,28 @@ select { font: inherit; border: 1px solid var(--line); border-radius: 999px; pad
 .roster-row { opacity: 0.85; white-space: nowrap; }
 .roster-row.me { font-weight: 600; opacity: 1; }
 .roster-row.gone { opacity: 0.45; text-decoration: line-through; }
+
+.gets { display: flex; flex-direction: column; gap: 4px; margin-bottom: 6px; }
+.gets-box summary { cursor: pointer; font-size: 12px; opacity: 0.85; }
+.gets-text { white-space: pre-wrap; font-size: 11px; max-height: 320px; overflow: auto; margin: 4px 0 0; padding: 6px 8px;
+  background: rgba(127, 127, 127, 0.08); border-radius: 6px; }
+
+.new-run .settings-group { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 14px 0 6px; }
+.new-run .agent-list { display: flex; flex-direction: column; gap: 6px; }
+.new-run .agent-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.new-run .agent-line input, .new-run .agent-line select, .new-run textarea { font: inherit; font-size: 14px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+.new-run .agent-line input[type=text] { width: 110px; }
+.new-run .agent-line input[type=number] { width: 80px; }
+.new-run .llm-only { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.new-run .persona { display: none; margin: 4px 0 2px; }
+.new-run .persona.open { display: block; }
+.new-run .persona textarea { width: 100%; box-sizing: border-box; resize: vertical; }
+.new-run .settings-box { margin: 14px 0 6px; border-top: 1px solid var(--line); padding-top: 8px; }
+.new-run .settings-box summary { cursor: pointer; font-weight: 600; font-size: 13px; }
+.new-run .field.check { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px; }
+.new-run .field.check small { flex-basis: 100%; }
+.new-run .field.changed > span { color: #b5487a; }
+.new-run .field.changed input, .new-run .field.changed select { border-color: #e08ab0; background: #fff6fa; }
+.new-run .seed-row { display: flex; gap: 6px; }
+.new-run .seed-row input { flex: 1; }
+.new-run .estimate { margin: 8px 0; font-size: 13px; }

@@ -50,6 +50,8 @@ class Body:
         self.heard: list[str] = []       # lines said to or done to this agent since it last looked
         self.heading: str | None = None  # direction of a move in progress, for swapping places
         self.swapped_t = -1              # world step a partner moved this body by swapping
+        self.decisions = 0               # actions started (the engine counts them)
+        self.hit_decision = -1           # the decision during which a zombie last hit it
 
 
 def forward_body_fields(cls) -> None:

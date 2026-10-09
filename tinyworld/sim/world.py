@@ -520,7 +520,8 @@ class World:
         for b in bodies:
             self.me = b
             ax, ay, az = self.pos
-            if self.health > 0 and self.t - self._last_hit >= cc.zombie_cooldown:
+            once = self.multi and cc.zombie_hits_per_decision
+            if self.health > 0 and self.t - self._last_hit >= cc.zombie_cooldown and not (once and b.hit_decision == b.decisions):
                 for c in self.creatures:
                     if c["kind"] != "zombie":
                         continue
@@ -531,6 +532,7 @@ class World:
                         self._hits.append(T.HIT_YOU.format(kind=self.dn("zombie").capitalize(), id=c["id"], x=x, y=y, z=z))
                         self._damage(self._armored(cc.zombie_damage), "zombie")
                         self._last_hit = self.t
+                        b.hit_decision = b.decisions
                         break
         self.me = me
 

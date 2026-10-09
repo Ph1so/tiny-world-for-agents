@@ -59,6 +59,8 @@ export class RunData {
   primaryAgent: number | null = null;
   stepsByAgent: Map<number, StepLine[]> = new Map();
   memoryByAgent: Map<number, MemoryLine[]> = new Map();
+  /** prompts.json: the system prompt per agent ("0" when alone), K and the memory size. */
+  prompts: { system: Record<string, string>; history_window: number; memory_chars: number } | null = null;
   /** "say" events, for speech bubbles. */
   says: EventLine[] = [];
   /** Bumped on every ingested line, so consumers can poll cheaply. */
@@ -95,6 +97,12 @@ export class RunData {
     const model = str("model", "null");
     this.meta.model = model === "null" ? null : model.replace(/^['"]|['"]$/g, "");
     this.meta.memoryChars = num("memory_chars", 0);
+    if (/^mode:\s*multi/m.test(text)) {               // per-agent settings sit under agents:
+      const n = (text.match(/^- id:/gm) ?? []).length || (text.match(/^\s+- id:/gm) ?? []).length;
+      this.meta.controller = `multi x${n}`;
+      const m = text.match(/^\s+model:\s*(\S+)/m);
+      this.meta.model = m ? m[1].replace(/^['"]|['"]$/g, "") : null;
+    }
     this.meta.longtermChars = num("longterm_chars", 0);
     this.meta.inventorySlots = num("inventory_slots", 0);
     this.meta.stackSize = num("stack_size", 32) || 32;

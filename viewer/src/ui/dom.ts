@@ -18,7 +18,8 @@ export function clear(e: HTMLElement): void {
 }
 
 export function button(label: string, onClick: () => void, cls = ""): HTMLButtonElement {
-  const b = el("button", { class: cls, text: label });
+  // type "button": inside a form a plain button would submit it (and start a run).
+  const b = el("button", { class: cls, text: label, type: "button" });
   b.addEventListener("click", onClick);
   return b;
 }

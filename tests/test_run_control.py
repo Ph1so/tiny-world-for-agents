@@ -140,3 +140,58 @@ def test_a_runner_that_fails_reports_its_log(client, monkeypatch):
     monkeypatch.setattr(client.app.state.control, "python", str(ROOT / "no-such-python"))
     r = client.post("/api/runs", json={"controller": "sensible_bot", "run_id": "bad2"}, headers=H)
     assert r.status_code == 500 and "could not launch" in r.json()["detail"]
+
+
+# ------------------------------------------------------------- the full new-run form
+
+def test_options_list_settings_with_each_worlds_values(client):
+    o = client.get("/api/options").json()
+    keys = {s["key"] for s in o["settings"]}
+    assert {"recipe_book", "weather.enabled", "creatures.zombie_max", "pvp_loot"} <= keys
+    assert o["world_defaults"]["world"]["creatures.zombie_max"] == 9
+    assert o["world_defaults"]["world_hard"]["view_radius"] == 4
+
+
+def test_form_one_bot_with_changed_settings_gets_its_own_world_file(client):
+    spec = {"agents": [{"controller": "sensible_bot"}], "max_steps": 30, "seed": 3, "run_id": "form1",
+            "settings": {"creatures.zombie_max": 2, "recipe_book": True, "weather.enabled": False}}
+    r = client.post("/api/runs", json=spec, headers=H)
+    assert r.status_code == 200, r.text
+    d = client.runs / "form1"
+    wait_for(lambda: (d / "summary.json").exists())
+    import yaml
+    w = yaml.safe_load((d / "config.yaml").read_text())["world"]
+    assert w["creatures"]["zombie_max"] == 2 and w["recipe_book"] is True and w["weather"]["enabled"] is False
+    assert w["creatures"]["zombie_damage"] == 3                      # untouched settings keep the base value
+    assert (d / "world.custom.yaml").exists()
+
+
+def test_form_several_agents_start_the_multi_agent_runner(client):
+    spec = {"agents": [{"name": "Ada", "controller": "llm", "model": "mock", "persona": "You like company."},
+                       {"name": "Bo", "controller": "sensible_bot"}],
+            "max_steps": 40, "seed": 2, "clock": "lockstep", "run_id": "form2"}
+    r = client.post("/api/runs", json=spec, headers=H)
+    assert r.status_code == 200, r.text
+    d = client.runs / "form2"
+    wait_for(lambda: (d / "summary.json").exists())
+    s = json.loads((d / "summary.json").read_text())
+    assert s["mode"] == "multi" and [a["name"] for a in s["agents"]] == ["Ada", "Bo"]
+    p = json.loads((d / "prompts.json").read_text())
+    assert next(iter(p["system"].values())).endswith("You like company.")
+    assert client.get("/api/runs").json()[0]["controller"].startswith("multi x2")
+    r = client.post("/api/runs/form2/resume", headers=H)
+    assert r.status_code == 409                                     # finished
+
+
+@pytest.mark.parametrize("spec,msg", [
+    ({"agents": []}, "agents: 1 to 8"),
+    ({"agents": [{"controller": "llm", "model": "nope"}]}, "unknown model"),
+    ({"agents": [{"controller": "sensible_bot"}], "settings": {"creatures.zombie_max": "lots"}}, "zombie_max"),
+    ({"agents": [{"controller": "sensible_bot"}], "settings": {"teleport": True}}, "unknown setting"),
+    ({"agents": [{"controller": "sensible_bot"}], "settings": {"night_start": 400}}, "night_start"),
+    ({"agents": [{"controller": "sensible_bot", "name": "bad/name"}]}, "name"),
+])
+def test_form_refuses_bad_specs_without_leaving_a_folder(client, spec, msg):
+    r = client.post("/api/runs", json={"max_steps": 10, "run_id": "bad", **spec}, headers=H)
+    assert r.status_code == 400 and msg in r.json()["detail"]
+    assert not (client.runs / "bad").exists()

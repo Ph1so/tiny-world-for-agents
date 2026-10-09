@@ -31,6 +31,14 @@ CONFIGS_DIR = Path(__file__).resolve().parents[2] / "configs"
 PAUSE_FILE = "pause"        # present: wait before the next step until it is removed
 STOP_FILE = "stop"          # present: end the loop without a summary.json, so --resume continues
 PID_FILE = "runner.pid"     # written while a runner is working on the folder
+PROMPTS_FILE = "prompts.json"   # the system prompt each LLM agent got, for the viewer
+
+
+def write_prompts(run_dir: Path, system: dict[str, str], controller) -> None:
+    """prompts.json: {"system": {agent id ("0" when alone): text}, "history_window", "memory_chars"}."""
+    (Path(run_dir) / PROMPTS_FILE).write_text(json.dumps({
+        "system": system, "history_window": getattr(controller, "history_window", 0),
+        "memory_chars": getattr(controller, "memory_chars", 0)}, indent=1))
 
 
 def hold(run_dir: Path) -> bool:
@@ -313,6 +321,8 @@ def run(run_id: str, controller_name: str = "sensible_bot", seed: int = 1, max_s
         controller = make_llm(config, world_cfg)
     if controller is None:
         controller = make_bot(controller_name, seed)
+    if hasattr(controller, "system_prompt") and not (run_dir / PROMPTS_FILE).exists():
+        write_prompts(run_dir, {"0": controller.system_prompt(world)}, controller)
     started = time.monotonic()
     # Old control files would pause or stop this runner straight away.
     for name in (PAUSE_FILE, STOP_FILE):
@@ -394,6 +404,7 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--names", choices=["familiar", "alien"], default=None)
     ap.add_argument("--shuffle-recipes", action="store_true", default=None)
     ap.add_argument("--recipe-book", action="store_true", default=None, help="list every craft in the system prompt")
+    ap.add_argument("--persona", default=None, help="a last paragraph for the LLM agent's system prompt")
     ap.add_argument("--on-death", default=None)
     ap.add_argument("--resume", action="store_true")
     ap.add_argument("--lineage", default=None,
@@ -425,6 +436,8 @@ def main(argv: list[str] | None = None) -> None:
             ap.error("--controller llm needs --model NAME (an entry in configs/models.yaml)")
         extra = {"model": opts["model"], "models_file": opts["models_file"], "memory_chars": opts["memory_chars"],
                  "history_window": opts["history_window"], "max_tokens": opts["max_tokens"]}
+        if args.persona:
+            extra["persona"] = args.persona
         if opts["longterm_chars"]:
             if not opts["lineage"]:
                 ap.error("--longterm-chars needs --lineage NAME")

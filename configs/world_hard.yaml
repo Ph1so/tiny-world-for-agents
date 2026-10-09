@@ -142,3 +142,4 @@ creatures:
   zombie_breaks: [dirt, sand, grass, leaves, planks]   # LETHAL NIGHTS: soft walls fail
   zombie_break_steps: 4
   torch_radius: 3           # LETHAL NIGHTS: torches suppress spawns over a smaller area
+  zombie_hits_per_decision: true  # multi-agent: at most one zombie hit per action an agent starts (thinking time is not free hits)

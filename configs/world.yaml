@@ -143,3 +143,4 @@ creatures:
   zombie_breaks: []         # block names a blocked zombie can break (empty = none)
   zombie_break_steps: 4     # steps adjacent to break one soft block
   torch_radius: 6           # a torch this close suppresses zombie spawns
+  zombie_hits_per_decision: true  # multi-agent: at most one zombie hit per action an agent starts (thinking time is not free hits)

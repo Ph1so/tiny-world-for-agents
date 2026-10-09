@@ -32,6 +32,9 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 RUN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 CONTROLLERS = ("llm", "sensible_bot", "random_bot")
 LOG_FILE = "runner.log"
+CUSTOM_WORLD = "world.custom.yaml"     # a run's world when the form changed any setting
+SPEC_FILE = "spec.yaml"                # a multi-agent run's agents and clock, as the form sent them
+AGENT_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _-]{0,31}$")
 
 
 class ControlError(Exception):
@@ -123,13 +126,13 @@ class RunControl:
     def _exists(self, run_id: str) -> bool:
         return any((d / run_id).exists() for d in self.dirs)
 
-    def _spawn(self, run_dir: Path, args: list[str]) -> None:
+    def _spawn(self, run_dir: Path, args: list[str], module: str = "tinyworld.runner.run") -> None:
         run_dir.mkdir(parents=True, exist_ok=True)
         log = open(run_dir / LOG_FILE, "a")
         log.write(f"\n--- {datetime.now().isoformat(timespec='seconds')} {' '.join(args)}\n")
         log.flush()
         try:
-            p = subprocess.Popen([self.python, "-m", "tinyworld.runner.run", *args], cwd=REPO_ROOT,
+            p = subprocess.Popen([self.python, "-m", module, *args], cwd=REPO_ROOT,
                                  stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
                                  start_new_session=True)
         except OSError as e:
@@ -156,7 +159,10 @@ class RunControl:
     def start(self, spec: dict[str, Any]) -> str:
         """Launch a new run. spec keys: controller, model, memory_chars, max_steps, seed, world,
         run_id, step_delay, and for a long-term file lineage and longterm_chars. Returns the run
-        id once the runner is up."""
+        id once the runner is up. With an "agents" list the form's full spec is used instead
+        (see start_agents)."""
+        if spec.get("agents") is not None:
+            return self.start_agents(spec)
         controller = spec.get("controller", "llm")
         if controller not in CONTROLLERS:
             raise ControlError(f"controller must be one of {', '.join(CONTROLLERS)}")
@@ -214,6 +220,111 @@ class RunControl:
         self._wait_started(run_dir)
         return run_id
 
+    def start_agents(self, spec: dict[str, Any]) -> str:
+        """The new-run form. spec: agents [{name, controller, model, memory_chars, persona}],
+        max_steps, seed, world (base), settings {dotted key: value}, run_id, and for several
+        agents clock (realtime | lockstep) and tick_ms; for one agent step_delay (bots) and
+        lineage / longterm_chars (LLM). One agent runs on the single-agent runner, more on the
+        multi-agent one."""
+        from .settings import apply_overrides
+        agents = spec.get("agents")
+        if not isinstance(agents, list) or not 1 <= len(agents) <= 8:
+            raise ControlError("agents: 1 to 8")
+        models = {m["name"] for m in self.models()}
+        clean = []
+        for n, a in enumerate(agents):
+            if not isinstance(a, dict):
+                raise ControlError("each agent must be an object")
+            kind = a.get("controller", "llm")
+            if kind not in CONTROLLERS:
+                raise ControlError(f"agent {n + 1}: controller must be one of {', '.join(CONTROLLERS)}")
+            name = str(a.get("name") or f"agent{n + 1}").strip()
+            if not AGENT_NAME_RE.match(name):
+                raise ControlError(f"agent {n + 1}: name is letters, digits, space _ -, at most 32")
+            entry: dict[str, Any] = {"name": name, "controller": kind}
+            if kind == "llm":
+                if a.get("model") not in models:
+                    raise ControlError(f"agent {n + 1}: unknown model {a.get('model')!r}")
+                try:
+                    mem = int(a.get("memory_chars", 2000))
+                except (TypeError, ValueError):
+                    raise ControlError(f"agent {n + 1}: memory_chars must be a whole number")
+                if not 0 <= mem <= 20000:
+                    raise ControlError(f"agent {n + 1}: memory_chars must be 0 to 20000")
+                persona = str(a.get("persona") or "").strip()
+                if len(persona) > 1500:
+                    raise ControlError(f"agent {n + 1}: persona is at most 1500 characters")
+                entry.update({"model": a["model"], "memory_chars": mem, "history_window": 3})
+                if persona:
+                    entry["persona"] = persona
+            clean.append(entry)
+        try:
+            max_steps, seed = int(spec.get("max_steps", 300)), int(spec.get("seed", 1))
+            tick_ms = int(spec.get("tick_ms", 1000))
+            delay = float(spec.get("step_delay", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            raise ControlError("max_steps, seed and tick_ms must be whole numbers")
+        if not 1 <= max_steps <= 20000:
+            raise ControlError("max_steps must be 1 to 20000")
+        if not 50 <= tick_ms <= 10000:
+            raise ControlError("tick_ms must be 50 to 10000")
+        clock = spec.get("clock", "realtime")
+        if clock not in ("realtime", "lockstep"):
+            raise ControlError("clock must be realtime or lockstep")
+        world = spec.get("world") or "world"
+        if world not in self.worlds():
+            raise ControlError(f"world must be one of {', '.join(self.worlds())}")
+        settings = spec.get("settings") or {}
+        if not isinstance(settings, dict):
+            raise ControlError("settings must be an object")
+        try:
+            world_data = apply_overrides(world, settings) if settings else None
+        except ValueError as e:
+            raise ControlError(f"world settings: {e}")
+        single = len(clean) == 1
+        lead = clean[0]
+        default_id = (f"{lead.get('model', lead['controller'])}_{datetime.now():%Y%m%d_%H%M%S}" if single
+                      else f"{len(clean)}agents_{datetime.now():%Y%m%d_%H%M%S}")
+        run_id = spec.get("run_id") or default_id
+        if not RUN_ID_RE.match(run_id):
+            raise ControlError("run id: letters, digits, _ . - only, at most 64 characters")
+        if self._exists(run_id):
+            raise ControlError(f"a run called {run_id} already exists", 409)
+        lineage = (spec.get("lineage") or "").strip() if single and lead["controller"] == "llm" else ""
+        if lineage:
+            if not NAME_RE.match(lineage):
+                raise ControlError("lineage: letters, digits, _ . - only, at most 64 characters")
+            held = Lineage(lineage).holder()
+            if held:
+                raise ControlError(f"lineage {lineage} is held by the unfinished run {held['run_id']}", 409)
+        run_dir = self.dirs[0] / run_id
+        run_dir.mkdir(parents=True)
+        world_path = CONFIGS_DIR / f"{world}.yaml"
+        if world_data is not None:
+            world_path = run_dir / CUSTOM_WORLD
+            world_path.write_text(f"# {world}.yaml with the new-run form's changes: {sorted(settings)}\n"
+                                  + yaml.safe_dump(world_data, sort_keys=False))
+        common = ["--seed", str(seed), "--max-steps", str(max_steps), "--run-id", run_id,
+                  "--runs-dir", str(self.dirs[0]), "--config", str(world_path)]
+        if single:
+            args = ["--controller", lead["controller"], *common]
+            if lead["controller"] == "llm":
+                args += ["--model", lead["model"], "--memory-chars", str(lead["memory_chars"])]
+                if lead.get("persona"):
+                    args += ["--persona", lead["persona"]]
+                if lineage:
+                    args += ["--lineage", lineage, "--longterm-chars", str(int(spec.get("longterm_chars") or 800))]
+            elif delay > 0:
+                args += ["--step-delay", str(min(5.0, delay))]
+            self._spawn(run_dir, args)
+        else:
+            (run_dir / SPEC_FILE).write_text(yaml.safe_dump(
+                {"agents": clean, "clock": clock, "tick_ms": tick_ms}, sort_keys=False))
+            self._spawn(run_dir, ["--spec", str(run_dir / SPEC_FILE), "--clock", clock, "--tick-ms", str(tick_ms),
+                                  *common], module="tinyworld.runner.multi")
+        self._wait_started(run_dir)
+        return run_id
+
     def pause(self, run_dir: Path) -> None:
         if self.state(run_dir) not in ("running", "paused"):
             raise ControlError("the run is not running", 409)
@@ -229,6 +340,9 @@ class RunControl:
         if state in ("running", "paused"):
             (run_dir / PAUSE_FILE).unlink(missing_ok=True)
             return
+        cfg = yaml.safe_load((run_dir / "config.yaml").read_text()) if (run_dir / "config.yaml").exists() else {}
+        if (cfg or {}).get("mode") == "multi":
+            raise ControlError("a stopped multi-agent run cannot be resumed yet", 409)
         self._spawn(run_dir, ["--run-id", run_dir.name, "--runs-dir", str(run_dir.parent), "--resume"])
         self._wait_started(run_dir)
 

@@ -452,3 +452,25 @@ as-is.
     world.me at its body. Real time (1 s per step by default) lets a slow model lose time; lockstep
     waits for every thinker before each step and is reproducible with bots. Multi-agent prompts
     replace the first line with a fact about time and other agents and add say/give lines.
+113. **Multi-agent: a zombie hit per agent decision, not per cooldown.** In runs/haiku_trio_s5
+    (3 Haiku agents, real time, 1 s per step) each decision took about 3 s, so an agent stood
+    still for 2 to 5 world steps between actions, and a zombie beside it hit every 2 steps: 293
+    hits, 34 deaths (32 at night), result lines like "Got 1 dirt. Zombie #43 hit you." four times
+    over. Solo runs never had this, because the world waits for the agent. Now, with
+    `zombie_hits_per_decision` (on), zombies can hit an agent at most once per action it starts
+    (Body.decisions, counted by the engine), on top of the step cooldown. A hit already cuts a
+    running action short, so this only bites while the agent is thinking. It applies only in a
+    multi-agent world, so single-agent runs are unchanged.
+114. **Run anything from the viewer.** The new-run form on the run picker now takes a list of
+    agents (name; model agent, sensible bot or random bot; model; memory size; an optional
+    persona paragraph), world steps, seed (with a dice button), base world, run id, the clock
+    and seconds per step when there are several agents, and 32 world settings in groups
+    (rules, weather, zombies, food and survival, resources, multi-agent) filled with the base
+    world's values. Only changed settings are sent; the server (tinyworld/server/settings.py)
+    writes them into a copy of the base world, checks it against WorldConfig before anything
+    starts, and the run gets it as world.custom.yaml, so its config.yaml records every value.
+    One agent goes to the single-agent runner (lineages and bot step delay still work, and
+    --persona is new there), more to the multi-agent runner (spec.yaml in the run folder).
+    The form shows a rough time and cost (from past Haiku runs: about $0.00043 and 3 s per
+    decision, about 2 world steps per action). Stopped multi-agent runs cannot be resumed yet;
+    the server says so.

@@ -153,3 +153,22 @@ def test_deltas_list_every_agent():
     _, deltas, _ = eng.tick()
     ids = [x["id"] for x in deltas[0]["agents"]]
     assert ids == [a, b] and deltas[0]["agents"][1]["name"] == "B"
+
+
+def test_a_thinking_agent_takes_one_zombie_hit_not_one_per_cooldown():
+    w, eng, a, b = two()
+    w.t = 210
+    w.cfg.creatures.zombie_step_every = 10**6           # the zombie stays put
+    w.cfg.vitals.heal_every = 10**6                      # no healing in between
+    w._spawn("zombie", (32, 10, 33))                     # beside agent a
+    for _ in range(10):                                  # a is "thinking": no action submitted
+        eng.tick()
+    assert w.body(a).health == 17                        # one hit of 3, not five
+    run_lockstep(eng, a, {"name": "wait", "steps": 1})
+    for _ in range(3):
+        eng.tick()
+    assert w.body(a).health == 14                        # a new decision can be hit again
+    w.cfg.creatures.zombie_hits_per_decision = False
+    for _ in range(4):
+        eng.tick()
+    assert w.body(a).health == 8                         # old rule: every cooldown

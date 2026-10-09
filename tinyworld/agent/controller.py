@@ -300,4 +300,5 @@ def from_config(config: dict, client: LLMClient | None = None) -> LLMController:
                                config.get("models_file"), config.get("max_tokens"), client=client,
                                longterm_chars=config.get("longterm_chars", 0) or 0,
                                longterm_start=config.get("longterm_start", "") or "",
-                               memory_plain=config.get("memory_plain") or "append")
+                               memory_plain=config.get("memory_plain") or "append",
+                               persona=config.get("persona"))
