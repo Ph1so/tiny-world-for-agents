@@ -62,6 +62,10 @@ uv run python -m tinyworld.runner.run --controller llm --model haiku --memory-ch
 # multi: add `planning: action` or `planning: triggers` to an agent line in the spec
 ```
 
+Agents left to choose rarely plan, so `plan_every: N` (flag `--plan-every N`) also asks for the plan
+on the agent's first turn and after every N of its turns; that count knows nothing about the world
+(DECISIONS 127).
+
 Planning turns are in steps.jsonl under `plan`; summary.json of a multi run has `plans_written` per agent.
 
 ## Sweeps and report

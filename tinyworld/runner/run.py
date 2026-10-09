@@ -401,6 +401,8 @@ def main(argv: list[str] | None = None) -> None:
                     help="sections: the memory file has GOAL, LESSONS (a rewrite keeps them) and NOTES")
     ap.add_argument("--planning", choices=["off", "action", "triggers"], default=None,
                     help="action: a plan slot and a plan action; triggers: also conditions the agent sets for planning again")
+    ap.add_argument("--plan-every", type=int, default=None,
+                    help="with --planning: also ask for the plan every N of the agent's turns (0 = never)")
     ap.add_argument("--history-window", type=int, default=None, help="past action/result pairs shown, K")
     ap.add_argument("--max-tokens", type=int, default=None, help="reply budget per call, default from the model entry")
     ap.add_argument("--seed", type=int, default=None)
@@ -428,7 +430,7 @@ def main(argv: list[str] | None = None) -> None:
             "history_window": 3, "max_tokens": None, "seed": 1, "max_steps": 1500, "run_id": None,
             "runs_dir": "runs", "names": None, "shuffle_recipes": None, "recipe_book": None, "on_death": None,
             "lineage": None, "longterm_chars": 0, "lineages_dir": None, "memory_layout": "plain",
-            "planning": "off"}
+            "planning": "off", "plan_every": 0}
     file_opts: dict = {}
     if args.run_config:
         file_opts = yaml.safe_load(Path(args.run_config).read_text()) or {}
@@ -450,6 +452,8 @@ def main(argv: list[str] | None = None) -> None:
             extra["memory_layout"] = opts["memory_layout"]
         if opts["planning"] != "off":
             extra["planning"] = opts["planning"]
+            if opts["plan_every"]:
+                extra["plan_every"] = opts["plan_every"]
         if opts["longterm_chars"]:
             if not opts["lineage"]:
                 ap.error("--longterm-chars needs --lineage NAME")

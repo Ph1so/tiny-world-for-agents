@@ -48,9 +48,15 @@ class LLMController:
                  on_death: str = "respawn_keep_memory", max_tokens: int | None = None, models_file: str | None = None,
                  longterm_chars: int = 0, longterm_start: str = "", memory_plain: str = "append",
                  intro: str | None = None, persona: str | None = None, memory_layout: str = "plain",
-                 planning: str = "off", plan_chars: int = PLAN_CHARS, plan_wait: int = 1):
+                 planning: str = "off", plan_chars: int = PLAN_CHARS, plan_wait: int = 1, plan_every: int = 0):
         if planning not in PLANNING:
             raise ValueError(f"planning must be one of {PLANNING}, not {planning!r}")
+        # plan_every N > 0: a planning turn is also forced once N of the agent's turns have gone by
+        # since its last one (and on its first turn). A count of turns, nothing about the world.
+        self.plan_every = max(0, int(plan_every or 0))
+        if self.plan_every and planning == "off":
+            raise ValueError("plan_every needs planning action or triggers")
+        self._turns_since_plan = self.plan_every    # due on the first turn
         # planning (agent/plan.py): "action" adds a plan slot and a plan action; "triggers" also
         # lets the agent set conditions for when it is asked to plan again. plan_wait is how many
         # world steps a planning turn takes (in real time the planner call's own latency adds).
@@ -124,6 +130,7 @@ class LLMController:
                 **({"longterm_chars": self.longterm_chars} if self.longterm_on else {}),
                 **({"planning": self.planning, "plan_chars": self.plan.limit, "plan_wait": self.plan_wait}
                    if self.planning_on else {}),
+                **({"plan_every": self.plan_every} if self.plan_every else {}),
                 "max_tokens": self.max_tokens, "models_file": self.models_file or str(DEFAULT_MODELS_PATH),
                 "llm_settings": self.client.settings(),
                 "prices_per_m": {"input": self.spec.input_per_m, "output": self.spec.output_per_m,
@@ -133,7 +140,7 @@ class LLMController:
         if self._system is None:
             self._system = build_system_prompt(world, self.history_window, self.memory_chars, self.longterm_chars,
                                                self.memory_plain, self.intro, self.persona, self.memory_layout,
-                                               self.planning, self.plan.limit)
+                                               self.planning, self.plan.limit, self.plan_every)
         return self._system
 
     def user_message(self, observation: str, t: int = 0) -> str:
@@ -155,6 +162,9 @@ class LLMController:
             if hit is not None:
                 # A condition the agent set turned true: this turn is the planner call alone.
                 return self.plan_turn(world, system, user, fired=hit.text)
+        if self.plan_every and self._turns_since_plan >= self.plan_every:
+            return self.plan_turn(world, system, user, fired=None, cause="interval")
+        self._turns_since_plan += 1
         reply = self.client.complete(system, user, self.max_tokens)
         parsed = parse_reply(reply.text, self.memory_plain)
         cost = self.spec.cost_usd(reply)
@@ -221,11 +231,15 @@ class LLMController:
             out["events"] = events
         return out
 
-    def plan_turn(self, world, system: str, user: str, fired: str | None, notices: list[str] | None = None) -> dict:
+    def plan_turn(self, world, system: str, user: str, fired: str | None, notices: list[str] | None = None,
+                  cause: str | None = None) -> dict:
         """One planner call. The reply replaces the plan, all or nothing (agent/plan.py). Returns
         a step output whose action is a wait of plan_wait steps and whose "plan" is the record
         that goes into steps.jsonl."""
-        reply = self.client.complete(system, user + "\n\n" + plan_request(self.planning, fired), self.max_tokens)
+        cause = cause or ("condition" if fired else "action")
+        self._turns_since_plan = 0
+        ask = plan_request(self.planning, fired, self.plan_every if cause == "interval" else 0)
+        reply = self.client.complete(system, user + "\n\n" + ask, self.max_tokens)
         cost = self.spec.cost_usd(reply)
         self.total_cost_usd += cost
         self.total_input_tokens += reply.input_tokens
@@ -239,7 +253,7 @@ class LLMController:
         if notes:
             world.set_notice(" ".join(notes))
         thought = obj.get("thought", "") if isinstance(obj, dict) else ""
-        record = {"cause": "condition" if fired else "action", "fired": fired, "accepted": res.accepted,
+        record = {"cause": cause, "fired": fired, "accepted": res.accepted,
                   "error": "unreadable" if obj is None else res.error, "over_by": res.over_by,
                   **self.plan.record(), "text": self.plan.body(self.plan.goal, self.plan.steps, self.plan.conditions)
                   if self.plan.is_set else "", "limit": self.plan.limit, "before": before,
@@ -377,7 +391,9 @@ class LLMController:
         plan = step_record.get("plan")
         self._plan_turn = None
         if not (self.planning_on and isinstance(plan, dict)):
+            self._turns_since_plan += 1
             return
+        self._turns_since_plan = 0
         self._plan_turn = {"accepted": bool(plan.get("accepted"))}
         if plan.get("accepted"):
             self.plans_written += 1
@@ -390,14 +406,15 @@ def make_llm_controller(model: str, memory_chars: int = 2000, history_window: in
                         longterm_chars: int = 0, longterm_start: str = "", memory_plain: str = "append",
                         intro: str | None = None, persona: str | None = None,
                         memory_layout: str = "plain", planning: str = "off", plan_chars: int = PLAN_CHARS,
-                        plan_wait: int = 1) -> LLMController:
+                        plan_wait: int = 1, plan_every: int = 0) -> LLMController:
     spec = get_model(model, models_file)
     client = client or make_client(spec, seed=seed)
     return LLMController(client, spec, memory_chars, history_window, on_death, max_tokens,
                          models_file=str(models_file) if models_file else None,
                          longterm_chars=longterm_chars, longterm_start=longterm_start, memory_plain=memory_plain,
                          intro=intro, persona=persona, memory_layout=memory_layout,
-                         planning=planning or "off", plan_chars=plan_chars or PLAN_CHARS, plan_wait=plan_wait or 1)
+                         planning=planning or "off", plan_chars=plan_chars or PLAN_CHARS, plan_wait=plan_wait or 1,
+                         plan_every=plan_every or 0)
 
 
 def from_config(config: dict, client: LLMClient | None = None) -> LLMController:
@@ -410,4 +427,4 @@ def from_config(config: dict, client: LLMClient | None = None) -> LLMController:
                                memory_plain=config.get("memory_plain") or "append",
                                persona=config.get("persona"), memory_layout=config.get("memory_layout") or "plain",
                                planning=config.get("planning") or "off", plan_chars=config.get("plan_chars") or PLAN_CHARS,
-                               plan_wait=config.get("plan_wait") or 1)
+                               plan_wait=config.get("plan_wait") or 1, plan_every=config.get("plan_every") or 0)

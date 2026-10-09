@@ -120,7 +120,7 @@ A planning turn (controller option `planning`, DECISIONS 125) has one more key, 
 is the wait the world was given:
 
 ```
-"plan": {"cause": "action" | "condition", "fired": "food < 8" | null, "accepted": true,
+"plan": {"cause": "action" | "condition" | "interval", "fired": "food < 8" | null, "accepted": true,
          "error": null | "over limit" | "no goal" | "unreadable", "over_by": 0,
          "goal": "...", "steps": ["..."], "replan_when": ["steps_since_plan >= 50"], "set_t": 412,
          "text": "the plan as shown", "chars": 87, "limit": 1000, "before": {the plan it replaced} | null,

@@ -205,3 +205,47 @@ def test_multi_run_with_planning_and_resume(tmp_path, planning):
     w = run_multi("m", max_steps=200, runs_dir=tmp_path, resume=True, clients={0: SensibleMockClient(seed=2, plan_every=15)})
     steps = [json.loads(l) for l in (d / "steps.jsonl").read_text().splitlines()]
     assert w.t >= 200 and len([s for s in steps if "plan" in s]) > len(plans)
+
+
+def test_plan_every_forces_a_plan_on_a_count_of_turns():
+    w = flat_world()
+    with pytest.raises(ValueError):
+        controller([WAIT], planning="off", plan_every=3)
+    c = controller(lambda s, u: plan_reply(goal=f"g{u.count('goal: ')}") if "Write your plan now." in u else WAIT,
+                   plan_every=3)
+    sysp = c.system_prompt(w)
+    assert "You are also asked for your plan every 3 turns" in sysp
+    assert "asked for your plan every" not in controller([WAIT]).system_prompt(w)
+    causes = []
+    for _ in range(9):
+        out, _ = step(c, w)
+        causes.append(out["plan"]["cause"] if "plan" in out else "-")
+    assert causes == ["interval", "-", "-", "-", "interval", "-", "-", "-", "interval"]
+    assert "It has been 3 turns since your plan was last written." in c.client.calls[0][1]
+    assert c.plans_written == 3 and c.config_extras()["plan_every"] == 3
+
+
+def test_choosing_to_plan_restarts_the_count():
+    w = flat_world()
+    n = {"i": 0}
+    def script(s, u):
+        if "Write your plan now." in u:
+            return plan_reply()
+        n["i"] += 1
+        return CHOOSE if n["i"] == 2 else WAIT
+    c = controller(script, plan_every=3)
+    causes = []
+    for _ in range(8):
+        out, _ = step(c, w)
+        causes.append(out["plan"]["cause"] if "plan" in out else "-")
+    assert causes == ["interval", "-", "action", "-", "-", "-", "interval", "-"]
+
+
+def test_plan_every_survives_a_resume(tmp_path):
+    script = lambda s, u: plan_reply() if "Write your plan now." in u else WAIT
+    extra = {"model": "mock", "memory_chars": 500, "history_window": 3, "planning": "action", "plan_every": 4}
+    mk = lambda: LLMController(MockClient(script), SPEC, memory_chars=500, planning="action", plan_every=4)
+    run("e", "llm", seed=1, max_steps=7, runs_dir=tmp_path, controller=mk(), extra_config=extra)
+    run("e", "llm", seed=1, max_steps=16, runs_dir=tmp_path, controller=mk(), resume=True)
+    steps = [json.loads(l) for l in (tmp_path / "e" / "steps.jsonl").read_text().splitlines()]
+    assert [s["t_start"] for s in steps if "plan" in s] == [0, 5, 10, 15]

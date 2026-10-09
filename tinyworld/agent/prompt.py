@@ -84,6 +84,12 @@ TRIGGERS_PARAGRAPH = (
     '"steps_since_plan >= 50". A condition is a name, one of < <= > >= == !=, and a number. The names are '
     "{names}, and any item name for how many of it you hold. On the step a condition turns true you are "
     "asked for a new plan before your next action; that takes the same time as the plan action.\n")
+# plan_every > 0 only: a plan is asked for on a fixed count of the agent's own turns. The count
+# knows nothing about the world.
+PLAN_EVERY_SENTENCE = ("You are also asked for your plan every {N} turns, counted from the last time you were "
+                       "asked or chose to write it; that takes the same time as the plan action.\n")
+PLAN_REQUEST_EVERY = ("It has been {N} turns since your plan was last written. Write your plan now. It replaces "
+                      "the one above.\nReply with one JSON object and nothing else:\n{reply}")
 PLAN_ACTION_LINE = 'plan: {"name": "plan"}  write your plan again; you are asked for it in a separate reply'
 PLAN_REPLY = '{"thought": "...", "goal": "...", "steps": ["...", "..."]}'
 PLAN_REPLY_TRIGGERS = '{"thought": "...", "goal": "...", "steps": ["...", "..."], "replan_when": ["...", "..."]}'
@@ -174,13 +180,14 @@ def _actions(world) -> str:
 
 def build_system_prompt(world, history_window: int, memory_chars: int, longterm_chars: int = 0,
                         memory_plain: str = "rewrite", intro: str | None = None, persona: str | None = None,
-                        memory_layout: str = "plain", planning: str = "off", plan_chars: int = 0) -> str:
+                        memory_layout: str = "plain", planning: str = "off", plan_chars: int = 0,
+                        plan_every: int = 0) -> str:
     """intro replaces the first line (multi-agent); persona is added as a last paragraph;
     memory_layout "sections" explains the GOAL / LESSONS / NOTES file in place of the plain one;
     planning "action" or "triggers" adds the plan paragraph and the plan action line."""
     text = _system_prompt(world, history_window, memory_chars, longterm_chars, memory_plain, memory_layout)
     if planning != "off":
-        text = _with_plan(text, world, planning, plan_chars)
+        text = _with_plan(text, world, planning, plan_chars, plan_every)
     if intro:
         text = intro + text[text.index("\n"):]
     if persona:
@@ -188,7 +195,7 @@ def build_system_prompt(world, history_window: int, memory_chars: int, longterm_
     return text
 
 
-def _with_plan(text: str, world, planning: str, plan_chars: int) -> str:
+def _with_plan(text: str, world, planning: str, plan_chars: int, plan_every: int = 0) -> str:
     """The plan paragraph goes just before "Actions:", the plan line at the end of the action
     lines (before the craft list, when there is one)."""
     from .plan import COUNTERS, MAX_CONDITIONS
@@ -196,14 +203,18 @@ def _with_plan(text: str, world, planning: str, plan_chars: int) -> str:
     if planning == "triggers":
         names = ", ".join(list(world.vitals()) + list(COUNTERS))
         para += TRIGGERS_PARAGRAPH.format(C=MAX_CONDITIONS, names=names)
+    if plan_every > 0:
+        para += PLAN_EVERY_SENTENCE.format(N=plan_every)
     head, sep, tail = text.partition("\nActions:\n")
     lines = action_lines(world)
     assert sep and tail.startswith(lines), "system prompt layout changed"
     return head + para + sep + lines + "\n" + PLAN_ACTION_LINE + tail[len(lines):]
 
 
-def plan_request(planning: str, fired: str | None = None) -> str:
+def plan_request(planning: str, fired: str | None = None, every: int = 0) -> str:
     reply = PLAN_REPLY_TRIGGERS if planning == "triggers" else PLAN_REPLY
+    if every:
+        return PLAN_REQUEST_EVERY.format(N=every, reply=reply)
     return PLAN_REQUEST_FIRED.format(cond=fired, reply=reply) if fired else PLAN_REQUEST.format(reply=reply)
 
 

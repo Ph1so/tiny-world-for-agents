@@ -634,3 +634,15 @@ as-is.
     unreadable, since it carries no action. A JSON object whose "action" has no name no longer
     hides a readable action elsewhere in the reply. `say` and `give` are now among the names the
     salvage paths know.
+127. **A plan asked for on a count of turns (plan_every), the comparison rung.** With `planning`
+    on and nothing forcing it, agents did not plan: Haiku 0 plans in 331 decisions
+    (runs/smoke_plan_triggers_s153), Sonnet 1 in 274 over two 200-step runs
+    (runs/sonnet_plan_s153_200, _v2). So whether a plan helps could not be seen at all. Agent spec
+    key `plan_every: N` (run flag `--plan-every`, needs planning action or triggers, default 0 =
+    never) makes the agent's turn a planning turn on its first turn and whenever N of its turns have
+    gone by since its last planning turn of any cause; choosing the plan action or a fired
+    condition restarts the count. The count is of the agent's own turns and knows nothing about the
+    world, which keeps to the rule of 125. It is more of our doing than rungs 1 and 2, since the
+    agent no longer decides when, and a run with it shows what a plan does, not whether an agent
+    would make one. The prompt adds one sentence saying so, and the request says how many turns it
+    has been. The step's `plan.cause` is `interval`.
